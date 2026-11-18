@@ -10,6 +10,11 @@
   const smoke = [], birds = [];
   let time = 0;
 
+  // Running inside the real Windows app (as opposed to a browser tab)? Then the icons are the
+  // user's actual desktop icons, and the fake icons, fake taskbar and test panel are not needed.
+  const NATIVE = !!window.__TAURI__;
+  if (NATIVE) for (const id of ['icons', 'taskbar', 'panel']) $(id).style.display = 'none';
+
   // --- time of day ------------------------------------------------------------
   // Colour the whole scene is multiplied by, at given hours of the day.
   const AMBIENT = [[0, .36, .42, .72], [4.5, .36, .42, .72], [6, .95, .72, .70], [7.5, 1, .96, .90], [9, 1, 1, 1], [16.5, 1, 1, 1],
@@ -33,7 +38,8 @@
     const w = window.innerWidth, h = window.innerHeight;
     for (const c of [groundCv, spriteCv, glowCv]) { c.width = w; c.height = h; }
     world = new HS.World(w, h, sprites);
-    if (!icons) icons = new HS.Icons($('icons'), onIconsChanged); else icons.reflow();
+    if (!icons) icons = NATIVE ? new HS.NativeIcons(onIconsChanged) : new HS.Icons($('icons'), onIconsChanged);
+    else icons.reflow();
     world.update(icons.rects(), null);
     villagers = new HS.Villagers(world);
     smoke.length = 0; birds.length = 0;

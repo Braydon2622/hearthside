@@ -134,6 +134,27 @@
     it.el.remove(); this.save(); this.changed(it);
   };
 
+  // The real thing: icon rectangles sent by the Windows side of the app (see src-tauri/src/desktop.rs).
+  // It offers the same rects()/reflow() as the fake icons above, so the rest of the code is unchanged.
+  HS.NativeIcons = function (onChange) {
+    this.list = [];
+    const key = (r) => r.x + ',' + r.y;
+    const apply = (rects) => {
+      const old = new Set(this.list.map(key)), now = new Set(rects.map(key));
+      // the icon that appeared somewhere new (or, failing that, one that vanished) is where the change ripples from
+      const moved = rects.find((r) => !old.has(key(r))) || this.list.find((r) => !now.has(key(r)));
+      const first = !this.ready;
+      this.list = rects; this.ready = true;
+      if (first) onChange(null);
+      else if (moved) onChange({ x: moved.x + moved.w / 2, y: moved.y + moved.h / 2 });
+    };
+    const T = window.__TAURI__;
+    T.event.listen('desktop-icons', (e) => apply(e.payload));
+    T.core.invoke('get_icons').then(apply).catch((err) => console.error('get_icons failed', err));
+  };
+  HS.NativeIcons.prototype.rects = function () { return this.list; };
+  HS.NativeIcons.prototype.reflow = function () {};
+
   P.reset = function () {
     this.items.forEach((i) => i.el.remove()); this.items = [];
     try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }

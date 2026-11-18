@@ -1,0 +1,15 @@
+{
+  "name": "hearthside",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A living village wallpaper that rearranges itself around your desktop icons.",
+  "license": "MIT",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
