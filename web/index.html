@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearthside prototype</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #6f9a52; font-family: "Segoe UI", system-ui, sans-serif; user-select: none; }
+  .layer { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #tint { mix-blend-mode: multiply; pointer-events: none; background: #fff; }
+  #glow { mix-blend-mode: screen; pointer-events: none; }
+  #icons { position: fixed; inset: 0; }
+
+  .icon { position: absolute; width: 76px; height: 88px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+          padding-top: 6px; box-sizing: border-box; border-radius: 4px; cursor: default; touch-action: none;
+          transition: left .14s ease-out, top .14s ease-out; }
+  .icon:hover { background: rgba(255,255,255,.14); outline: 1px solid rgba(255,255,255,.22); }
+  .icon.dragging { transition: none; opacity: .82; z-index: 5; background: rgba(255,255,255,.2); }
+  .icon .glyph { width: 44px; height: 44px; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
+  .icon .label { margin-top: 4px; font-size: 12px; line-height: 14px; color: #fff; text-align: center; max-width: 72px; overflow: hidden;
+                 text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
+                 text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7); }
+
+  #taskbar { position: fixed; left: 0; right: 0; bottom: 0; height: 44px; background: rgba(28,32,40,.72); backdrop-filter: blur(14px);
+             display: flex; align-items: center; justify-content: center; gap: 10px; color: #e9edf5; font-size: 12px; }
+  #taskbar .dot { width: 22px; height: 22px; border-radius: 5px; background: rgba(255,255,255,.2); }
+  #taskbar .clock { position: absolute; right: 16px; text-align: right; line-height: 15px; }
+
+  #panel { position: fixed; right: 12px; bottom: 56px; width: 232px; padding: 10px 12px 12px; border-radius: 10px;
+           background: rgba(28,32,40,.82); color: #e9edf5; font-size: 12px; backdrop-filter: blur(10px); }
+  #panel h1 { font-size: 12px; margin: 0 0 8px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; opacity: .75; }
+  #panel label { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+  #panel input[type=range] { flex: 1; min-width: 0; }
+  #panel button { font: inherit; color: inherit; background: rgba(255,255,255,.14); border: 0; border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+  #panel button:hover { background: rgba(255,255,255,.26); }
+  #panel .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  #panel .hint { opacity: .65; margin-top: 8px; line-height: 15px; }
+</style>
+</head>
+<body>
+  <canvas id="ground" class="layer"></canvas>
+  <canvas id="sprites" class="layer"></canvas>
+  <div id="tint" class="layer"></div>
+  <canvas id="glow" class="layer"></canvas>
+  <div id="icons"></div>
+
+  <div id="taskbar">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span class="clock" id="taskClock"></span>
+  </div>
+
+  <div id="panel">
+    <h1>Prototype controls</h1>
+    <label><input type="checkbox" id="liveClock" checked> Follow real clock</label>
+    <label>Time <input type="range" id="timeSlider" min="0" max="24" step="0.05" value="12"> <span id="timeLabel">12:00</span></label>
+    <div class="row">
+      <button id="addIcon">Add icon</button>
+      <button id="removeIcon">Remove icon</button>
+      <button id="resetIcons">Reset</button>
+    </div>
+    <div class="hint">Drag the icons. The village rearranges when you let go.</div>
+  </div>
+
+  <script src="js/util.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/ground.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/villagers.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
