@@ -22,7 +22,8 @@ use windows::Win32::UI::Shell::{
     SVGIO_ALLVIEW, SWC_DESKTOP, SWFO_NEEDDISPATCH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, FindWindowW, GetClientRect, GetWindowLongPtrW, SendMessageTimeoutW,
+    EnumWindows, FindWindowExW, FindWindowW, GetClientRect, GetParent, GetWindow, GetWindowLongPtrW, GW_HWNDNEXT,
+    SendMessageTimeoutW,
     SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, LWA_ALPHA,
     SMTO_NORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_CAPTION, WS_CHILD, WS_EX_LAYERED,
     WS_EX_NOREDIRECTIONBITMAP, WS_POPUP, WS_THICKFRAME,
@@ -108,6 +109,24 @@ pub fn attach_behind_icons(raw: isize) -> Result<String, String> {
     }
 }
 
+/// True if our window is still a child of the desktop, sitting directly under the icon layer.
+pub fn is_behind_icons(raw: isize) -> bool {
+    unsafe {
+        let ours = hwnd(raw);
+        let style = GetWindowLongPtrW(ours, GWL_STYLE) as u32;
+        if style & WS_CHILD.0 == 0 {
+            return false;
+        }
+        let Ok(progman) = FindWindowW(w!("Progman"), None) else { return false };
+        match FindWindowExW(Some(progman), None, w!("SHELLDLL_DefView"), None) {
+            // new layout: we must be the window right below the icons
+            Ok(defview) => GetWindow(defview, GW_HWNDNEXT).map(|next| next == ours).unwrap_or(false),
+            // classic layout: being a child of something is all we can check cheaply
+            Err(_) => GetParent(ours).is_ok(),
+        }
+    }
+}
+
 thread_local! {
     // COM (the system Explorer speaks) has to be switched on once per thread that uses it.
     static COM_READY: bool = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
@@ -137,14 +156,14 @@ unsafe fn read_icons_inner(our_window: isize) -> windows::core::Result<Vec<IconR
 
     // Size of one icon cell (icon plus label), and the icons themselves.
     let mut spacing = POINT::default();
-    view.GetSpacing(Some(&mut spacing))?;
-    let items: IEnumIDList = view.Items(SVGIO_ALLVIEW.0 as u32)?;
+    view.GetSpacing(&mut spacing)?;
+    let items: IEnumIDList = view.Items(SVGIO_ALLVIEW)?;
 
     // Explorer reports real screen pixels; the web page works in scaled pixels (e.g. 150% display).
     let scale = GetDpiForWindow(hwnd(our_window)).max(96) as f64 / 96.0;
     let px = |v: i32| (v as f64 / scale).round() as i32;
 
-    let mut out = Vec::new();
+    let mut points: Vec<POINT> = Vec::new();
     loop {
         let mut item: [*mut ITEMIDLIST; 1] = [std::ptr::null_mut()];
         let mut fetched = 0u32;
@@ -152,10 +171,21 @@ unsafe fn read_icons_inner(our_window: isize) -> windows::core::Result<Vec<IconR
             break;
         }
         if let Ok(pt) = view.GetItemPosition(item[0]) {
-            out.push(IconRect { x: px(pt.x), y: px(pt.y), w: px(spacing.x), h: px(spacing.y) });
+            points.push(pt);
         }
         CoTaskMemFree(Some(item[0] as *const core::ffi::c_void));
     }
+
+    // Explorer gives the corner of the icon picture, which sits a little inside its grid cell
+    // (the picture is centred above the label). The icons are on a regular grid, so the leftover
+    // after dividing by the cell size is that inset; removing it gives the true cell corner.
+    let (sx, sy) = (spacing.x.max(1), spacing.y.max(1));
+    let inset_x = points.iter().map(|p| p.x.rem_euclid(sx)).min().unwrap_or(0);
+    let inset_y = points.iter().map(|p| p.y.rem_euclid(sy)).min().unwrap_or(0);
+    let mut out: Vec<IconRect> = points
+        .iter()
+        .map(|p| IconRect { x: px(p.x - inset_x), y: px(p.y - inset_y), w: px(sx), h: px(sy) })
+        .collect();
     out.sort_by_key(|r| (r.x, r.y));
     Ok(out)
 }

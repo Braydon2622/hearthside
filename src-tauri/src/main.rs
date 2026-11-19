@@ -46,12 +46,14 @@ fn main() {
                 .build(app)?;
 
             // Slide the window behind the desktop icons.
+            // (Show first: showing a window makes the windowing library re-apply its own styles,
+            // which would undo ours if we attached before.)
             let hwnd = window.hwnd()?.0 as isize;
+            window.show()?;
             match desktop::attach_behind_icons(hwnd) {
                 Ok(how) => println!("attached behind icons: {how}"),
                 Err(e) => eprintln!("could not attach behind icons: {e}"),
             }
-            window.show()?;
 
             // Watch the icons. A background thread re-reads their positions a few times a second
             // and only bothers the page when something actually changed.
@@ -59,10 +61,21 @@ fn main() {
             std::thread::spawn(move || {
                 let mut last: Vec<desktop::IconRect> = Vec::new();
                 let mut first = true;
+                let mut last_fix = std::time::Instant::now();
                 loop {
+                    // If anything pushed us out of place (Explorer restarting, a style reset),
+                    // quietly slide back behind the icons.
+                    if !desktop::is_behind_icons(hwnd) && last_fix.elapsed() > Duration::from_secs(5) {
+                        last_fix = std::time::Instant::now();
+                        match desktop::attach_behind_icons(hwnd) {
+                            Ok(how) => println!("re-attached behind icons: {how}"),
+                            Err(e) => eprintln!("could not re-attach: {e}"),
+                        }
+                    }
                     match desktop::read_icons(hwnd) {
                         Ok(now) => {
                             if first || now != last {
+                                println!("icons: {} (first: {:?})", now.len(), now.first());
                                 first = false;
                                 last = now.clone();
                                 *handle.state::<Icons>().0.lock().unwrap() = now.clone();
