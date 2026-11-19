@@ -145,4 +145,33 @@ sheet into `art/source/v2/animals.png`, re-run `tools/cut-sprites.ps1`, and poin
 entries of `ART` in `web/js/sprites.js` at them (the cutter needs one line to include `animals`).
 Optionally regenerate props for a steeper camera without outlines.
 
-Next: milestone 5, code-drawn density.
+## Milestone 5: code-drawn density (done)
+
+- New `web/js/filler.js`. Shape templates painted once by code in the shared palette and lit from the top-left
+  (dark base, mid tones, sunlit dabs upper left, darker painted edge): four bushes (one flowering), three small
+  tree crowns, six flower-dab colours, three grass tufts, three stepping stones, horizontal and vertical fence
+  pieces, and three crop beds. They go into the same atlas as the painted art.
+- Placement, recomputed only when the icons change, from the land field: a jittered 14 px grid over the whole
+  screen. Nothing inside a clearing; a dense band of small bushes, flowers and tufts along clearing rims; small
+  crowns and bushes filling the forest floor between the big trees; flowers in drifts (noise-masked, one or two
+  colours per drift), shrub groups and tufts on village grass. Four-bed crop fields on the village outskirts
+  where a 120x90 px patch is free. Stepping stones up to every standing house door, and a picket fence with a
+  gate round about half the gardens. About 1,100 to 1,600 pieces at 1920x1080.
+- **Quiet near icons**: every piece is scaled by smoothstep(4, 24, distance to the nearest icon) and dropped
+  below 0.12, so detail fades out within about 20 px of any icon.
+- **Cost**: the filler has its own instance buffer, uploaded only when it changes. Grow-in and shrink-away run in
+  the vertex shader from a per-piece start time, following the drop ripple, so the CPU does nothing per frame.
+  Pieces that are still wanted after a move keep their place (stable keys), so only what changed animates.
+- **Regrowth**: trees now regrow linearly from a sapling over about 1.8 s, staggered, once space frees up;
+  buildings rise in about 0.7 s. Checked by dragging an icon away from a clearing in the browser: the old plaza
+  closes and the three houses it had displaced grow back while the new plaza opens at the drop.
+- **Performance fix**: per-process breakdown showed about 6 % in the GPU process and 4 % in the renderer, i.e.
+  draw-call and pass overhead. Shadows (kept between frames) are now refreshed every second frame and bloom
+  every fourth frame; both are always refreshed on a forced or paused frame.
+
+Measured (real app, animating, four 30 s runs): **7.8 to 9.0 % of one core, 427 to 432 MB.** Before the pass
+reduction: 5.8 to 17.7 % (mean about 10.8 %).
+
+Checked: `05-density-*` screenshots, 1.6x crops, a drag in the browser.
+
+Next: milestone 6, life.

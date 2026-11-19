@@ -25,6 +25,7 @@
     uniform vec2 uRes;
     uniform float uTime;
     uniform float uShadow;                 // 1 when drawing shadows instead of the things themselves
+    uniform float uFiller;                 // 1 for the code-drawn filler: misc.z = grow (1) / shrink (-1), misc.w = when
     uniform vec2 uShadowDir;
     out vec2 vUV;
     out vec4 vColor;
@@ -35,9 +36,18 @@
       float c = cos(iPivot.z), s = sin(iPivot.z);
       vec2 d = p - iPivot.xy;
       p = iPivot.xy + vec2(c * d.x - s * d.y, s * d.x + c * d.y);
+      float lift = iMisc.z, grow = 1.0;
+      if (uFiller > 0.5) {
+        float t = clamp((uTime - iMisc.w) / 0.7, 0.0, 1.0);
+        t = t * t * (3.0 - 2.0 * t);
+        grow = iMisc.z > 0.5 ? t : (iMisc.z < -0.5 ? 1.0 - t : 1.0);
+        if (grow < 0.01) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+        p = iPivot.xy + (p - iPivot.xy) * grow;
+        lift = 0.0;
+      }
       if (uShadow > 0.5) {
         if (iMisc.y <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-        p += uShadowDir * (iMisc.y + iMisc.z);
+        p += uShadowDir * (iMisc.y + lift) * grow;
       }
       vUV = mix(iUV.xy, iUV.zw, aCorner);
       vColor = iColor;
@@ -192,26 +202,31 @@
 
     // sprites (and their shadows)
     const sprog = HS.glProgram(gl, SPRITE_VS, SPRITE_FS);
-    const sU = uniforms(sprog, ['uRes', 'uTime', 'uShadow', 'uShadowDir']);
+    const sU = uniforms(sprog, ['uRes', 'uTime', 'uShadow', 'uFiller', 'uShadowDir']);
     gl.useProgram(sprog);
     gl.uniform1i(gl.getUniformLocation(sprog, 'uAtlas'), 7);
     gl.uniform2f(sU.uShadowDir, SHADOW_DIR[0], SHADOW_DIR[1]);
-    const spriteVao = gl.createVertexArray();
-    gl.bindVertexArray(spriteVao);
     const cb = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, cb);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    const ib = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, ib);
-    for (let i = 0; i < 5; i++) {
-      gl.enableVertexAttribArray(1 + i);
-      gl.vertexAttribPointer(1 + i, 4, gl.FLOAT, false, FLOATS * 4, i * 16);
-      gl.vertexAttribDivisor(1 + i, 1);
+    // one instance buffer for the things redrawn every frame, one for the filler (changes rarely)
+    function instanced() {
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, cb);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      for (let i = 0; i < 5; i++) {
+        gl.enableVertexAttribArray(1 + i);
+        gl.vertexAttribPointer(1 + i, 4, gl.FLOAT, false, FLOATS * 4, i * 16);
+        gl.vertexAttribDivisor(1 + i, 1);
+      }
+      gl.bindVertexArray(null);
+      return { vao, buf, size: 0, n: 0 };
     }
-    gl.bindVertexArray(null);
-    let ibSize = 0;
+    const sceneGpu = instanced(), fillerGpu = instanced(), lightsGpu = instanced();
 
     // full-screen passes
     const shadeProg = HS.glProgram(gl, QUAD_VS, SHADE_FS), shadeU = uniforms(shadeProg, ['uRes']);
@@ -299,21 +314,24 @@
 
     this.scene = new Batch();   // everything standing, in depth order
     this.lights = new Batch();  // night lights, added on top of the finished frame
+    this.filler = new Batch();  // code-drawn filler; set fillerDirty after changing it
 
-    function upload(batch) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, ib);
+    function upload(gpu, batch, usage) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, gpu.buf);
       const bytes = batch.n * FLOATS * 4;
-      if (bytes > ibSize) { ibSize = batch.data.byteLength; gl.bufferData(gl.ARRAY_BUFFER, ibSize, gl.DYNAMIC_DRAW); }
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, batch.data, 0, batch.n * FLOATS);
+      if (bytes > gpu.size) { gpu.size = batch.data.byteLength; gl.bufferData(gl.ARRAY_BUFFER, gpu.size, usage); }
+      if (batch.n) gl.bufferSubData(gl.ARRAY_BUFFER, 0, batch.data, 0, batch.n * FLOATS);
+      gpu.n = batch.n;
     }
-    function drawBatch(batch, time, shadow) {
-      if (!batch.n) return;
+    function drawGpu(gpu, time, shadow, filler) {
+      if (!gpu.n) return;
       gl.useProgram(sprog);
-      gl.bindVertexArray(spriteVao);
+      gl.bindVertexArray(gpu.vao);
       gl.uniform2f(sU.uRes, W, H);
       gl.uniform1f(sU.uTime, time);
       gl.uniform1f(sU.uShadow, shadow ? 1 : 0);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, batch.n);
+      gl.uniform1f(sU.uFiller, filler ? 1 : 0);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, gpu.n);
     }
     function fullscreen(prog, t) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.fb : null);
@@ -326,7 +344,12 @@
     this.grade = { gain: [1, 1, 1], lift: [0, 0, 0], look: [1, 0.15, 0.3], threshold: 0.72 };
 
     // Draw one frame. Fill this.scene and this.lights first.
-    this.render = function (world, time) {
+    // Shadows and bloom change slowly, and both pictures are kept between frames, so they are
+    // refreshed only every second and every fourth frame (always when asked to, with full = true).
+    let frameNo = 0;
+    this.render = function (world, time, full) {
+      frameNo++;
+      const doShadows = full || frameNo % 2 === 0 || this.fillerDirty, doBloom = full || frameNo % 4 === 1;
       if (this.groundDirty || world.dirty) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, T.ground.fb);
         gl.disable(gl.BLEND);
@@ -338,15 +361,19 @@
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, T.scene.fb);
       gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 
-      upload(this.scene);
+      upload(sceneGpu, this.scene, gl.DYNAMIC_DRAW);
+      if (this.fillerDirty) { upload(fillerGpu, this.filler, gl.STATIC_DRAW); this.fillerDirty = false; }
       // shadows: gathered with "keep the darkest", then multiplied over the ground once
-      gl.bindFramebuffer(gl.FRAMEBUFFER, T.shadow.fb);
-      gl.viewport(0, 0, T.shadow.w, T.shadow.h);
-      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.enable(gl.BLEND);
-      gl.blendEquation(gl.MAX);
-      drawBatch(this.scene, time, true);
-      gl.blendEquation(gl.FUNC_ADD);
+      if (doShadows) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, T.shadow.fb);
+        gl.viewport(0, 0, T.shadow.w, T.shadow.h);
+        gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.blendEquation(gl.MAX);
+        drawGpu(fillerGpu, time, true, true);
+        drawGpu(sceneGpu, time, true, false);
+        gl.blendEquation(gl.FUNC_ADD);
+      }
       fullscreen(shadeProg, T.scene);
       gl.uniform2f(shadeU.uRes, W, H);
       gl.blendFunc(gl.DST_COLOR, gl.ZERO);
@@ -355,21 +382,24 @@
       // the things themselves
       gl.viewport(0, 0, W, H);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      drawBatch(this.scene, time, false);
+      drawGpu(fillerGpu, time, false, true);
+      drawGpu(sceneGpu, time, false, false);
       gl.disable(gl.BLEND);
 
       // bloom: bright parts at a quarter size, blurred across then down
       const g = this.grade;
-      fullscreen(brightProg, T.bloomA);
-      gl.uniform2f(brightU.uRes, T.bloomA.w, T.bloomA.h);
-      gl.uniform1f(brightU.uThreshold, g.threshold);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      fullscreen(blurProg, T.bloomB);
-      gl.uniform2f(blurU.uRes, T.bloomB.w, T.bloomB.h); gl.uniform2f(blurU.uDir, 1.5, 0); gl.uniform1i(blurU.uSrc, 12);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      fullscreen(blurProg, T.bloomA);
-      gl.uniform2f(blurU.uDir, 0, 1.5); gl.uniform1i(blurU.uSrc, 13);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      if (doBloom) {
+        fullscreen(brightProg, T.bloomA);
+        gl.uniform2f(brightU.uRes, T.bloomA.w, T.bloomA.h);
+        gl.uniform1f(brightU.uThreshold, g.threshold);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        fullscreen(blurProg, T.bloomB);
+        gl.uniform2f(blurU.uRes, T.bloomB.w, T.bloomB.h); gl.uniform2f(blurU.uDir, 1.5, 0); gl.uniform1i(blurU.uSrc, 12);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        fullscreen(blurProg, T.bloomA);
+        gl.uniform2f(blurU.uDir, 0, 1.5); gl.uniform1i(blurU.uSrc, 13);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
 
       // finishing pass onto the screen
       fullscreen(pprog, null);
@@ -383,8 +413,8 @@
       if (this.lights.n) {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE);
-        upload(this.lights);
-        drawBatch(this.lights, time, false);
+        upload(lightsGpu, this.lights, gl.DYNAMIC_DRAW);
+        drawGpu(lightsGpu, time, false, false);
         gl.disable(gl.BLEND);
       }
     };

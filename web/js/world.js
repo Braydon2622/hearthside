@@ -395,7 +395,7 @@
     for (const o of objects) {
       const t = want[o.id];
       if (!drop) { o.target = o.scale = t; o.delay = 0; }
-      else if (t !== o.target) { o.target = t; o.delay = wave(o.x, o.y) + (t ? 0.55 : 0); }
+      else if (t !== o.target) { o.target = t; o.delay = wave(o.x, o.y) + (t ? 0.55 + HS.hash2(o.id, 7) * 0.9 : 0); }
       if (t && o.blocking) for (const c of o.cells) this.blocked[c] = 1;
     }
 
@@ -499,7 +499,9 @@
     for (const o of this.objects) {
       if (o.scale === o.target) continue;
       if (o.delay > 0) { o.delay -= dt; continue; }
-      o.scale += (o.target - o.scale) * (1 - Math.exp(-dt * (o.target ? 5 : 12)));
+      // things tuck away quickly; trees regrow slowly from a sapling, buildings rise a little faster
+      if (o.target) o.scale = Math.min(1, o.scale + dt * (o.sway ? 0.55 : 1.4));
+      else o.scale += (o.target - o.scale) * (1 - Math.exp(-dt * 12));
       if (Math.abs(o.target - o.scale) < 0.01) o.scale = o.target;
     }
     for (const [c, l] of this.lanterns) {

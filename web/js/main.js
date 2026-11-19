@@ -10,7 +10,7 @@
   const sprites = HS.buildSprites();
   const renderer = new HS.Renderer(canvas);
   renderer.setSprites(HS.allSprites(sprites));
-  let world, villagers, icons;
+  let world, villagers, icons, filler;
   const smoke = [], birds = [];
   let time = 0;
 
@@ -58,11 +58,13 @@
     if (!icons) icons = NATIVE ? new HS.NativeIcons(onIconsChanged) : new HS.Icons($('icons'), onIconsChanged);
     else icons.reflow();
     world.update(icons.rects(), null);
+    filler = new HS.Filler(world, sprites);
+    filler.update(null, time);
     villagers = new HS.Villagers(world);
     smoke.length = 0; birds.length = 0;
     for (let i = 0; i < 4; i++) birds.push(newBird(true));
     renderer.groundDirty = true;
-    HS.app = { world, villagers, icons, renderer };
+    HS.app = { world, villagers, icons, renderer, filler };
     if (paused) tick(0);
   }
 
@@ -70,6 +72,7 @@
     // While paused (desktop hidden) there is no animation: the change is applied at once and
     // painted a single time, so the desktop is already correct when it comes back into view.
     world.update(icons.rects(), paused ? null : drop);
+    filler.update(paused ? null : drop, time);
     villagers.worldChanged(paused ? null : drop);
     if (paused) tick(0);
   }
@@ -179,10 +182,12 @@
     gr.gain = k.slice(0, 3); gr.lift = k.slice(3, 6); gr.look = k.slice(6, 9); gr.threshold = k[9];
 
     world.step(dt);
+    filler.step(time);
+    if (filler.dirty) { filler.fill(renderer.filler); renderer.fillerDirty = true; }
     villagers.step(dt, night);
     fillScene(dt);
     fillLights(night);
-    renderer.render(world, time);
+    renderer.render(world, time, paused || dt === 0);
     world.dirty = false;
 
     if (!NATIVE) {
@@ -195,7 +200,7 @@
     const was = paused;
     paused = p;
     // going to sleep: finish any half-done rearranging so the picture left on screen is complete
-    if (p && !was && world) { world.update(icons.rects(), null); villagers.worldChanged(null); tick(0); }
+    if (p && !was && world) { world.update(icons.rects(), null); filler.update(null, time); villagers.worldChanged(null); tick(0); }
     if (!p && !running) { running = true; last = performance.now(); setTimeout(frame, 0); }
   }
   HS.setPaused = setPaused;

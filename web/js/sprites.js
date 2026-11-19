@@ -238,15 +238,20 @@
   // Every sprite in the set, for packing into the renderer's sprite sheet.
   HS.allSprites = function (s) {
     const out = [];
-    for (const k of Object.keys(s)) {
-      if (Array.isArray(s[k])) out.push(...s[k]);
-      else if (s[k] && s[k].canvas) out.push(s[k]);
-    }
+    const walk = (o) => {
+      for (const k of Object.keys(o)) {
+        if (Array.isArray(o[k])) out.push(...o[k]);
+        else if (o[k] && o[k].canvas) out.push(o[k]);
+        else if (o[k] && typeof o[k] === 'object') walk(o[k]);
+      }
+    };
+    walk(s);
     return out;
   };
   const build = HS.buildSprites;
   HS.buildSprites = function () {
     const s = build();
+    s.filler = HS.buildFillerSprites();
     s.decor = [];   // these exist only as painted art
     HS.sprites = s;
     return s;
