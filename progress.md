@@ -87,4 +87,27 @@ needs a careful A/B at the end rather than a guess).
 Checked: `02-ground-*` screenshots; the rim and inner shadow at 1:1 crops; drag and morph still fine; night lights
 and the district render through the new pipeline.
 
-Next: milestone 3, unified lighting (engine shadows, sprites without baked shadows) and the colour grade.
+## Milestone 3: unified lighting and colour grade (done)
+
+- **One light, from the top-left; every shadow drawn by the engine.** The painted sprites have no cast shadow on
+  their background; the baked shadows were the ellipses the code painted into each sprite canvas (in `fromImage`
+  and every placeholder) and the dark blob under each villager. All of those are gone. Each instance now carries
+  the height it stands; the renderer draws every sprite again as its own silhouette, blurred by reading a
+  lower-detail mip level of the atlas (bias 2.2), offset by height x (0.9, 0.62), into a half-size shadow picture
+  with MAX blending (so overlapping shadows never double-darken), and multiplies that over the ground once in a
+  cool blue-grey. Villagers cast from their figure, and a hop throws the shadow further; birds use a large
+  "height above ground" so their shadows land far away. Atlas padding went up to 12 px so blurred mips do not
+  pick up neighbouring sprites.
+- **Grade pass** over the finished frame (replacing the old per-sprite tint copies): keyframed by hour with gain,
+  lift, saturation, S-curve contrast and bloom strength/threshold (night, dawn, morning, day, sunset, dusk).
+  Bloom: bright parts at quarter size, two-pass Gaussian blur, added before the grade. Paper: a fixed fine grain
+  plus faint large blotches (not animated, so it reads as paper rather than film noise). Night lights are still
+  added after the grade so they stay warm.
+
+Measured (real app, animating): **9.1 to 9.4 % of one core, 427 to 442 MB.** Covered not re-measured separately
+(the paused path is unchanged since milestone 2: 0.8 %).
+
+Checked: `03-light-*` screenshots; shadows at 2.4x crops (soft, cool, offset bottom-right, merged where trees
+overlap); sunset is warm with lifted purple shadows; night is deep blue with warm windows and lanterns.
+
+Next: milestone 4, new hero art at the new camera.

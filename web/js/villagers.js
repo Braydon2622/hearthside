@@ -128,12 +128,12 @@
     const walking = v.state === 'walk' && v.hop <= 0;
     const lift = v.hop > 0 ? Math.abs(Math.sin(v.hop * 10)) * 7 : 0;
     const s = HS.sprites, cat = v.kind === 'cat';
-    batch.add(s.blob, v.x, v.y + 1, cat ? 0.5 : 0.46, 0.46, false, 1, 1, 1, 0.24, 0, 0, 0);   // shadow on the ground
     const set = cat ? s.cat : s.villager;
     if (!set || !set.length) return;
     const sp = set[v.spi % set.length];
     const bob = walking ? Math.abs(Math.sin(v.phase)) * 1.5 : 0;
     const tilt = walking ? Math.sin(v.phase) * 0.09 : Math.sin(v.look * 0.7) * 0.025;
-    batch.add(sp, v.x, v.y - lift - bob, 1, 1, v.face < 0, 1, 1, 1, 1, tilt * (v.face < 0 ? -1 : 1), 0, 0);
+    // the shadow is cast by the renderer from the figure itself; a hop throws it a little further
+    batch.add(sp, v.x, v.y - lift - bob, 1, 1, v.face < 0, 1, 1, 1, 1, tilt * (v.face < 0 ? -1 : 1), 0, 0, cat ? 4 : 8, lift + bob);
   };
 })(window.HS);

@@ -20,10 +20,23 @@
   if (NATIVE) for (const id of ['icons', 'taskbar', 'panel']) $(id).style.display = 'none';
 
   // --- time of day ------------------------------------------------------------
-  // Colour the whole scene is multiplied by, at given hours of the day.
-  const AMBIENT = [[0, .36, .42, .72], [4.5, .36, .42, .72], [6, .95, .72, .70], [7.5, 1, .96, .90], [9, 1, 1, 1], [16.5, 1, 1, 1],
-    [18.5, 1, .78, .60], [20, .62, .50, .72], [21.5, .36, .42, .72], [24, .36, .42, .72]];
+  // The colour grade over the finished frame, at given hours of the day:
+  //   hour, gain r g b (highlights multiplied by), lift r g b (shadows raised toward),
+  //   saturation, contrast (S-curve), bloom strength, bloom threshold
+  const GRADE = [
+    [0,    .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55],
+    [4.5,  .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55],
+    [6,    .96, .72, .66,  .060, .030, .060,  .95, .12, .45, .62],
+    [7.5, 1.03, .97, .88,  .020, .012, .020, 1.05, .15, .32, .70],
+    [9,   1.04, 1.01, .95, .010, .008, .012, 1.08, .18, .28, .74],
+    [16.5,1.04, 1.01, .95, .010, .008, .012, 1.08, .18, .28, .74],
+    [18.5,1.10, .82, .62,  .060, .020, .080, 1.14, .20, .55, .62],
+    [20,   .62, .50, .72,  .040, .030, .080,  .82, .14, .55, .58],
+    [21.5, .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55],
+    [24,   .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55]];
   const NIGHT = [[0, 1], [5, 1], [6.5, 0], [18.3, 0], [20.5, 1], [24, 1]];
+  // How tall each kind of thing stands, for the length of its shadow (pixels).
+  const CAST = { house: 18, tree: 22, pine: 26, blossom: 20, bush: 7, cypress: 18, flowerbed: 3, tub: 5, decor: 8, lantern: 14 };
   function keyed(keys, h) {
     for (let i = 1; i < keys.length; i++) if (h <= keys[i][0]) {
       const a = keys[i - 1], b = keys[i], t = (h - a[0]) / (b[0] - a[0]);
@@ -75,15 +88,15 @@
     const b = renderer.scene;
     b.reset();
     extra.length = 0;
-    for (const l of world.lanterns.values()) if (l.scale > 0.02) extra.push({ sp: sprites.lantern, x: l.x, y: l.y, scale: l.scale });
+    for (const l of world.lanterns.values()) if (l.scale > 0.02) extra.push({ kind: 'lantern', sp: sprites.lantern, x: l.x, y: l.y, scale: l.scale });
     for (const p of world.props.values()) if (p.scale > 0.02) extra.push(p);
     for (const v of villagers.list) if (v.state !== 'inside') extra.push({ villager: v, y: v.y });
     extra.sort((a, c) => a.y - c.y);
     let i = 0;
-    const put = (e) => { if (e.villager) HS.drawVillager(b, e.villager); else b.sprite(e.sp, e.x, e.y, e.scale); };
+    const put = (e) => { if (e.villager) HS.drawVillager(b, e.villager); else b.sprite(e.sp, e.x, e.y, e.scale, CAST[e.kind] || 6); };
     for (const o of world.objects) {
       while (i < extra.length && extra[i].y <= o.y) put(extra[i++]);
-      if (o.scale >= 0.02) b.sprite(o.sp, o.x, o.y, o.scale);
+      if (o.scale >= 0.02) b.sprite(o.sp, o.x, o.y, o.scale, CAST[o.kind] || 6);
     }
     while (i < extra.length) put(extra[i++]);
 
@@ -112,8 +125,8 @@
       d.x += d.vx * dt; d.y += d.vy * dt; d.phase += dt * 9;
       if (d.x < -60 || d.x > w + 60) { birds[k] = newBird(false); continue; }
       const flap = Math.sin(d.phase);
-      b.add(sprites.bird, d.x + 16, d.y + 30, 0.9, flap * 0.9, false, 0.12, 0.18, 0.12, 0.2, 0, 0, 0);
-      b.add(sprites.bird, d.x, d.y, 0.9, flap * 0.9, false, 0.96, 0.95, 0.92, 1, 0, 0, 0);
+      // flying high: the shadow lands far from the bird
+      b.add(sprites.bird, d.x, d.y, 0.9, flap * 0.9, false, 0.96, 0.95, 0.92, 1, 0, 0, 0, 2, 44);
     }
   }
 
@@ -162,13 +175,14 @@
     time += dt;
     const h = hourNow();
     const night = keyed(NIGHT, h)[0];
-    HS.tint = keyed(AMBIENT, h);
+    const k = keyed(GRADE, h), gr = renderer.grade;
+    gr.gain = k.slice(0, 3); gr.lift = k.slice(3, 6); gr.look = k.slice(6, 9); gr.threshold = k[9];
 
     world.step(dt);
     villagers.step(dt, night);
     fillScene(dt);
     fillLights(night);
-    renderer.render(world, time, HS.tint);
+    renderer.render(world, time);
     world.dirty = false;
 
     if (!NATIVE) {
@@ -209,8 +223,7 @@
 
   // Start with the code-drawn placeholders, then swap in the painted art as soon as it has loaded.
   build();
-  if (!NATIVE && Q.has('fill')) icons.fill(HS.rng(5));
-  setTimeout(frame, 0);
+  if (!NATIVE && Q.has('fill')) icons.fill(HS.rng(5));  setTimeout(frame, 0);
   HS.loadArt(sprites).then(() => { renderer.setSprites(HS.allSprites(sprites)); build(); });
   renderer.ground.loadTextures(() => { renderer.groundDirty = true; if (paused && world) tick(0); });
 })(window.HS);
