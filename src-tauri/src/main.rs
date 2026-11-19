@@ -78,7 +78,18 @@ fn main() {
                 let mut last_fix = std::time::Instant::now();
                 let mut last_read = std::time::Instant::now();
                 let mut watch_closely_until = std::time::Instant::now();
+                let mut last_cursor = (-100_000, -100_000);
                 loop {
+                    // The mouse cursor, ten times a second while the desktop is visible: creatures
+                    // in the village notice it. Sent only when it has actually moved.
+                    if !covered {
+                        if let Some(c) = desktop::cursor_pos(hwnd) {
+                            if (c.0 - last_cursor.0).abs() + (c.1 - last_cursor.1).abs() > 2 {
+                                last_cursor = c;
+                                let _ = handle.emit("cursor", serde_json::json!({ "x": c.0, "y": c.1 }));
+                            }
+                        }
+                    }
                     // If anything pushed us out of place (Explorer restarting, a style reset),
                     // quietly slide back behind the icons.
                     if !desktop::is_behind_icons(hwnd) && last_fix.elapsed() > Duration::from_secs(5) {
@@ -107,8 +118,11 @@ fn main() {
                     let closely = std::time::Instant::now() < watch_closely_until;
                     // (The very first read always happens, so the page has the icons even if the
                     // app starts while a window is covering the desktop.)
-                    if !first && (covered || (!closely && last_read.elapsed() < Duration::from_secs(2))) {
-                        std::thread::sleep(Duration::from_millis(250));
+                    // The loop wakes every 100 ms (for the cursor); icons are still read at most
+                    // every 250 ms while the mouse is busy and every 2 s otherwise.
+                    let wait = if closely { Duration::from_millis(250) } else { Duration::from_secs(2) };
+                    if !first && (covered || last_read.elapsed() < wait) {
+                        std::thread::sleep(Duration::from_millis(if covered { 250 } else { 100 }));
                         continue;
                     }
                     last_read = std::time::Instant::now();
@@ -124,7 +138,7 @@ fn main() {
                         }
                         Err(e) => eprintln!("could not read icons: {e}"),
                     }
-                    std::thread::sleep(Duration::from_millis(250));
+                    std::thread::sleep(Duration::from_millis(100));
                 }
             });
             Ok(())

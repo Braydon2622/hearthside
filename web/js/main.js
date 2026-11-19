@@ -1,49 +1,23 @@
-// Ties everything together: builds the world, runs the frame loop, fills the renderer with
-// everything that stands on the ground, and handles time of day.
+// Ties the code-art world together: builds the world from the icons, keeps the still layer (flora,
+// stars) and the creatures up to date, follows the time of day and the mouse cursor, and runs the
+// frame loop.
 //
-// The whole picture is one WebGL2 canvas (see render.js): the ground is painted off-screen and
-// only repainted while it morphs; buildings, trees, props and villagers are drawn on top in one
-// batch every frame; a finishing pass adds cloud shadows and the time of day.
+// The picture is one WebGL2 canvas (see render.js). The ground is painted off-screen and only
+// repainted while it morphs or the colours of the hour move; the still layer is uploaded only when
+// the icons change; the creatures are drawn every frame into a trail picture that keeps a fading
+// ghost of their movement.
 (function (HS) {
   const $ = (id) => document.getElementById(id);
   const canvas = $('scene');
-  const sprites = HS.buildSprites();
   const renderer = new HS.Renderer(canvas);
-  renderer.setSprites(HS.allSprites(sprites));
-  let world, villagers, icons, filler;
-  const smoke = [], birds = [];
-  let time = 0;
+  let world, creatures, icons;
+  let time = 0, palKey = '';
 
   // Running inside the real Windows app (as opposed to a browser tab)? Then the icons are the
   // user's actual desktop icons, and the fake icons, fake taskbar and test panel are not needed.
   const NATIVE = !!window.__TAURI__;
   if (NATIVE) for (const id of ['icons', 'taskbar', 'panel']) $(id).style.display = 'none';
 
-  // --- time of day ------------------------------------------------------------
-  // The colour grade over the finished frame, at given hours of the day:
-  //   hour, gain r g b (highlights multiplied by), lift r g b (shadows raised toward),
-  //   saturation, contrast (S-curve), bloom strength, bloom threshold
-  const GRADE = [
-    [0,    .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55],
-    [4.5,  .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55],
-    [6,    .96, .72, .66,  .060, .030, .060,  .95, .12, .45, .62],
-    [7.5, 1.03, .97, .88,  .020, .012, .020, 1.05, .15, .32, .70],
-    [9,   1.04, 1.01, .95, .010, .008, .012, 1.08, .18, .28, .74],
-    [16.5,1.04, 1.01, .95, .010, .008, .012, 1.08, .18, .28, .74],
-    [18.5,1.10, .82, .62,  .060, .020, .080, 1.14, .20, .55, .62],
-    [20,   .62, .50, .72,  .040, .030, .080,  .82, .14, .55, .58],
-    [21.5, .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55],
-    [24,   .30, .36, .64,  .008, .014, .036,  .66, .16, .55, .55]];
-  const NIGHT = [[0, 1], [5, 1], [6.5, 0], [18.3, 0], [20.5, 1], [24, 1]];
-  // How tall each kind of thing stands, for the length of its shadow (pixels).
-  const CAST = { house: 18, tree: 22, pine: 26, blossom: 20, bush: 7, cypress: 18, flowerbed: 3, tub: 5, decor: 8, lantern: 14 };
-  function keyed(keys, h) {
-    for (let i = 1; i < keys.length; i++) if (h <= keys[i][0]) {
-      const a = keys[i - 1], b = keys[i], t = (h - a[0]) / (b[0] - a[0]);
-      return a.slice(1).map((v, j) => HS.lerp(v, b[j + 1], t));
-    }
-    return keys[keys.length - 1].slice(1);
-  }
   function hourNow() {
     if ($('liveClock').checked) { const d = new Date(); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600; }
     return parseFloat($('timeSlider').value) % 24;
@@ -54,17 +28,15 @@
   function build() {
     const w = HS.viewW(), h = HS.viewH();
     renderer.resize(w, h);
-    world = new HS.World(w, h, sprites);
+    HS.setHour(hourNow()); palKey = HS.pal.key;
+    world = new HS.World(w, h, null);
     if (!icons) icons = NATIVE ? new HS.NativeIcons(onIconsChanged) : new HS.Icons($('icons'), onIconsChanged);
     else icons.reflow();
     world.update(icons.rects(), null);
-    filler = new HS.Filler(world, sprites);
-    filler.update(null, time);
-    villagers = new HS.Villagers(world);
-    smoke.length = 0; birds.length = 0;
-    for (let i = 0; i < 4; i++) birds.push(newBird(true));
+    HS.buildFlora(world, renderer);
+    creatures = new HS.Creatures(world);
     renderer.groundDirty = true;
-    HS.app = { world, villagers, icons, renderer, filler };
+    HS.app = { world, creatures, icons, renderer };
     if (paused) tick(0);
   }
 
@@ -72,97 +44,31 @@
     // While paused (desktop hidden) there is no animation: the change is applied at once and
     // painted a single time, so the desktop is already correct when it comes back into view.
     world.update(icons.rects(), paused ? null : drop);
-    filler.update(paused ? null : drop, time);
-    villagers.worldChanged(paused ? null : drop);
+    HS.buildFlora(world, renderer);
+    creatures.worldChanged(paused ? null : drop);
     if (paused) tick(0);
   }
 
-  function newBird(anywhere) {
-    const dir = Math.random() < 0.5 ? 1 : -1, w = HS.viewW(), h = HS.viewH();
-    return { x: anywhere ? Math.random() * w : (dir > 0 ? -40 : w + 40), y: Math.random() * h * 0.8, vx: dir * (50 + Math.random() * 40),
-      vy: (Math.random() - 0.5) * 16, phase: Math.random() * 6, wait: anywhere ? 0 : 3 + Math.random() * 14 };
-  }
-
-  // --- filling the frame --------------------------------------------------------
-  // Everything standing, in depth order: lower on screen = drawn later = in front.
-  // world.objects is already sorted by y; props, lanterns and villagers are sorted and merged in.
-  const extra = [], byY = (a, c) => a.y - c.y;
-  // tree crowns sway in the wind: about 3 % of their width at the top, the phase rolling across the screen
-  const sway = (e) => (e.sway ? e.sp.w * 0.03 * (e.size || 1) : 0), phase = (e) => e.x * 0.011 + e.y * 0.005;
-  function fillScene(dt) {
-    const b = renderer.scene;
-    b.reset();
-    extra.length = 0;
-    // (no new objects per frame: lanterns, props and villagers go into the list as they are)
-    for (const l of world.lanterns.values()) if (l.scale > 0.02) { l.kind = 'lantern'; l.sp = sprites.lantern; extra.push(l); }
-    for (const p of world.props.values()) if (p.scale > 0.02) extra.push(p);
-    for (const v of villagers.list) if (v.state !== 'inside') extra.push(v);
-    extra.sort(byY);
-    let i = 0;
-    const put = (e) => { if (e.kind === 'person' || e.kind === 'cat' || e.kind === 'dog') HS.drawVillager(b, e); else b.sprite(e.sp, e.x, e.y, e.scale * (e.size || 1), CAST[e.kind] || 6, sway(e), phase(e)); };
-    for (const o of world.objects) {
-      while (i < extra.length && extra[i].y <= o.y) put(extra[i++]);
-      if (o.scale >= 0.02) b.sprite(o.sp, o.x, o.y, o.scale, CAST[o.kind] || 6, sway(o), phase(o));
+  // The status line: a quiet corner readout, in whichever corner is furthest from the icons.
+  function hud(h) {
+    const g = renderer.hud, P = HS.pal;
+    g.reset();
+    const s = 'hearthside.ascii  ' + String(icons.rects().length).padStart(2, '0') + ' nodes  ' +
+      creatures.walkers.length + ' walkers  ' + creatures.jellies.length + ' drifters  ' + fmt(h);
+    const size = 11, wpx = s.length * size * 0.6, bottom = world.height - HS.TASKBAR - 16;
+    const corners = [[16, bottom], [world.width - wpx - 16, bottom], [world.width - wpx - 16, 18], [16, 18]];
+    let best = corners[0], bd = -1;
+    for (const [x, y] of corners) {
+      let d = Infinity;
+      for (let k = 0; k <= 4; k++) d = Math.min(d, world.field.at(x + wpx * k / 4, y, 1));
+      if (d > bd) { bd = d; best = [x, y]; }
     }
-    while (i < extra.length) put(extra[i++]);
-
-    // chimney smoke
-    for (const hs of world.allHouses()) {
-      if (hs.scale < 0.95) continue;
-      hs.smoke -= dt;
-      if (hs.smoke <= 0) {
-        hs.smoke = 0.7 + Math.random() * 0.9;
-        smoke.push({ x: hs.x + hs.sp.chimney.x, y: hs.y + hs.sp.chimney.y, vx: 5 + Math.random() * 5, vy: -11 - Math.random() * 5, life: 0, max: 2.6 + Math.random() * 1.2 });
-      }
-    }
-    for (let k = smoke.length - 1; k >= 0; k--) {
-      const p = smoke[k];
-      p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt;
-      if (p.life >= p.max) { smoke.splice(k, 1); continue; }
-      const t = p.life / p.max, s = (2.5 + t * 6) / 8 * 1.15;
-      b.add(sprites.puff, p.x, p.y, s, s, false, 0.96, 0.95, 0.92, 0.5 * (1 - t), 0, 0, 0);
-    }
-
-    // birds high above, with their shadows on the ground far below
-    const w = canvas.width;
-    for (let k = 0; k < birds.length; k++) {
-      const d = birds[k];
-      if (d.wait > 0) { d.wait -= dt; continue; }
-      d.x += d.vx * dt; d.y += d.vy * dt; d.phase += dt * 9;
-      if (d.x < -60 || d.x > w + 60) { birds[k] = newBird(false); continue; }
-      const flap = Math.sin(d.phase);
-      // flying high: the shadow lands far from the bird
-      b.add(sprites.bird, d.x, d.y, 0.9, flap * 0.9, false, 0.96, 0.95, 0.92, 1, 0, 0, 0, 2, 44);
-    }
-  }
-
-  // Night lights: a warm glow across the front of each house and around each lantern.
-  function fillLights(night) {
-    const b = renderer.lights;
-    b.reset();
-    if (night < 0.02) return;
-    const glow = sprites.glow;
-    for (const hs of world.allHouses()) {
-      if (hs.scale < 0.9) continue;
-      if (hs.sp.glowAt) {
-        const a = hs.sp.glowAt, s = a.size / glow.w;
-        b.add(glow, hs.x + a.x, hs.y + a.y, s, s, false, 1, 1, 1, night * 0.75, 0, 0, 0);
-      }
-      for (const win of hs.sp.windows) {
-        const x = hs.x + win.x, y = hs.y + win.y;
-        b.add(sprites.white, x, y, win.w / 4, win.h / 4, false, 1, 0.85, 0.54, night * 0.8, 0, 0, 0);
-        b.add(glow, x + win.w / 2, y + win.h / 2 + 4, 52 / 64, 52 / 64, false, 1, 1, 1, night * 0.5, 0, 0, 0);
-      }
-    }
-    for (const l of world.lanterns.values()) b.add(glow, l.x - 6, l.y - 22, 84 / 64, 84 / 64, false, 1, 1, 1, night * l.scale * 0.9, 0, 0, 0);
+    g.text(s, best[0] + size * 0.3, best[1], size, P.star, 0.45);
   }
 
   // --- main loop -------------------------------------------------------------------
-  // When a maximised or full-screen window hides the desktop, the Windows side tells us and the
-  // loop stops completely until the desktop is visible again.
-  // The loop runs on a plain timer rather than requestAnimationFrame: asking for animation frames
-  // keeps the browser's 60-per-second frame machinery awake even on the frames we skip, which
-  // costs more processor time than drawing the frames we do want.
+  // A plain timer, 20 frames a second (30 while the ground morphs). When a maximised or full-screen
+  // window hides the desktop, the Windows side tells us and the loop stops until it is visible again.
   let last = performance.now(), paused = false, running = true;
   function frame() {
     if (paused) { running = false; return; }
@@ -170,27 +76,22 @@
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     tick(dt);
-    // 30 frames a second while the village is rearranging, 20 the rest of the time
-    // (villagers only stroll, and the lower rate saves about a third of the work).
-    const interval = world.animating || world.field.morphing ? 33 : 50;
+    const interval = world.field.morphing ? 33 : 50;
     setTimeout(frame, Math.max(4, interval - (performance.now() - now)));
   }
 
-  // One step of the world plus one frame.
   function tick(dt) {
     time += dt;
     const h = hourNow();
-    const night = keyed(NIGHT, h)[0];
-    const k = keyed(GRADE, h), gr = renderer.grade;
-    gr.gain = k.slice(0, 3); gr.lift = k.slice(3, 6); gr.look = k.slice(6, 9); gr.threshold = k[9];
+    HS.setHour(h);
+    if (HS.pal.key !== palKey) { palKey = HS.pal.key; renderer.groundDirty = true; HS.buildFlora(world, renderer); }
 
     world.step(dt);
-    filler.step(time);
-    if (filler.dirty) { filler.fill(renderer.filler); renderer.fillerDirty = true; }
-    villagers.step(dt, night);
-    fillScene(dt);
-    fillLights(night);
-    renderer.render(world, time, paused || dt === 0);
+    creatures.step(dt);
+    creatures.draw(renderer.moving, renderer.movingGlyphs);
+    hud(h);
+    // trails: about 40 % of the light survives each 50 ms frame, so ghosts last a few tenths of a second
+    renderer.render(world, time, paused || dt === 0, Math.pow(0.4, dt / 0.05));
     world.dirty = false;
 
     if (!NATIVE) {
@@ -203,12 +104,17 @@
     const was = paused;
     paused = p;
     // going to sleep: finish any half-done rearranging so the picture left on screen is complete
-    if (p && !was && world) { world.update(icons.rects(), null); filler.update(null, time); villagers.worldChanged(null); tick(0); }
+    if (p && !was && world) { world.update(icons.rects(), null); HS.buildFlora(world, renderer); creatures.worldChanged(null); tick(0); }
     if (!p && !running) { running = true; last = performance.now(); setTimeout(frame, 0); }
   }
   HS.setPaused = setPaused;
+
+  // The mouse cursor: in the browser from pointer events, in the real app from the Windows side
+  // (the wallpaper never receives mouse events itself, it sits behind the icons).
+  window.addEventListener('pointermove', (e) => { if (creatures) creatures.setCursor(e.clientX, e.clientY); });
   if (NATIVE) {
     window.__TAURI__.event.listen('wallpaper-covered', (e) => setPaused(!!e.payload));
+    window.__TAURI__.event.listen('cursor', (e) => { if (creatures && e.payload) creatures.setCursor(e.payload.x, e.payload.y); });
     // the first message may have been sent before this page finished loading, so also ask
     window.__TAURI__.core.invoke('get_covered').then((c) => setPaused(!!c)).catch(() => {});
   }
@@ -229,9 +135,7 @@
   let resizeTimer = 0;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 200); });
 
-  // Start with the code-drawn placeholders, then swap in the painted art as soon as it has loaded.
   build();
-  if (!NATIVE && Q.has('fill')) icons.fill(HS.rng(5));  setTimeout(frame, 0);
-  HS.loadArt(sprites).then(() => { const all = HS.allSprites(sprites); renderer.setSprites(all); renderer.releaseSprites(all); build(); });
-  renderer.ground.loadTextures(() => { renderer.groundDirty = true; if (paused && world) tick(0); });
+  if (!NATIVE && Q.has('fill')) icons.fill(HS.rng(5));
+  setTimeout(frame, 0);
 })(window.HS);

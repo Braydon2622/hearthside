@@ -184,6 +184,14 @@
 
   P.step = function (dt) { if (this.t < 1e8) this.t += dt; };
 
+  // Value of channel ch of the new field at a pixel, smoothly interpolated between texels.
+  P.smoothAt = function (px, py, ch) {
+    const fx = HS.clamp(px / R - 0.5, 0, this.w - 1.001), fy = HS.clamp(py / R - 0.5, 0, this.h - 1.001);
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, w = this.w, d = this.next;
+    const a = d[(y0 * w + x0) * 4 + ch], b = d[(y0 * w + x0 + 1) * 4 + ch], c = d[((y0 + 1) * w + x0) * 4 + ch], e = d[((y0 + 1) * w + x0 + 1) * 4 + ch];
+    return (a + (b - a) * tx) + ((c + (e - c) * tx) - (a + (b - a) * tx)) * ty;
+  };
+
   // Value of channel ch of the new field at a pixel (nearest texel).
   P.at = function (px, py, ch) {
     const x = HS.clamp(Math.floor(px / R), 0, this.w - 1), y = HS.clamp(Math.floor(py / R), 0, this.h - 1);

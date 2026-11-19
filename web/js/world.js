@@ -74,6 +74,15 @@
       return o;
     };
 
+    // Scenery (houses, trees, garden things) only exists for a sprite set; the code-art version
+    // passes none and draws its own creatures and flora from the field instead.
+    if (sprites) this.buildScenery(rand, occ, idx, maxRow, add);
+    this.objects.sort((a, b) => a.y - b.y);
+    this.objects.forEach((o, i) => { o.id = i; for (const c of o.cells) this.objAt[c] = i; });
+  };
+
+  HS.World.prototype.buildScenery = function (rand, occ, idx, maxRow, add) {
+    const W = this.W, H = this.H, sprites = this.sprites;
     // Houses, on a roomy staggered grid. Seen from high above a cottage roof is about two icon
     // cells wide, so there are fewer, larger houses with lanes and gardens between them.
     const HW = 6, HD = 6;   // house footprint in cells (about 144 x 144 px)
@@ -129,8 +138,6 @@
           bbox: { x: x - sp.w / 2 + sp.w * 0.12, y: y - sp.h + sp.h * 0.12, w: sp.w * 0.76, h: sp.h * 0.8 } });
       }
     }
-    this.objects.sort((a, b) => a.y - b.y);
-    this.objects.forEach((o, i) => { o.id = i; for (const c of o.cells) this.objAt[c] = i; });
   };
 
   const P = HS.World.prototype;
@@ -403,7 +410,16 @@
     //    slots wide), a tree or a prop in a single empty slot, and small things in the gaps between
     //    side-by-side icons (which are the only places nothing covers on a full desktop)
     const wanted = new Map(), freeGaps = [];
-    if (dz) {
+    this.lines = lines;                    // the paths, as smooth polylines
+    this.lots = dz ? dz.lots : [];         // empty district slots
+    this.gaps = [];                        // spaces between side-by-side district icons
+    if (dz && !this.sprites) {
+      for (const g of dz.gaps) {
+        const y = g.top + Math.min(52, dz.ch * 0.55);
+        if (y <= this.height - HS.TASKBAR - 4) { this.gaps.push({ x: g.x, y }); freeGaps.push({ x: g.x, y: y - 4 }); }
+      }
+    }
+    if (dz && this.sprites) {
       const sp = this.sprites, at = new Map(dz.lots.map((l) => [l.c + ',' + l.r, l])), used = new Set();
       const lots = dz.lots.slice().sort((a, b) => a.r - b.r || a.c - b.c);
       for (const lot of lots) {

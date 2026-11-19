@@ -223,6 +223,44 @@ Checked: `06-life-*` screenshots (all four states, both sizes); villager positio
 Measured (real app, animating, three 30 s runs): **6.7 to 9.3 % of one core, 424 to 431 MB.**
 Screenshots `06-life-*` re-taken with the new villagers.
 
+## v3: code-art redesign (2026-11-19)
+
+The painted version is saved as tag `v2-painted` and branch `painted-v2` (commit c9d54ab). The owner felt it
+was too generic and shared three short videos as inspiration: neon line creatures on black (a spider of
+curved orange legs with dot joints around a square core), ASCII stars and jellyfish on a terminal-style
+background, and thin neon tentacle creatures. Chosen with the owner: a creature ecosystem instead of the
+village, neon linework plus ASCII, colours that shift with the time of day, and creatures that notice the
+mouse cursor.
+
+- **Renderer** (`render.js`, rewritten): everything is either a glowing line segment (core plus soft
+  halo, additive, so overlapping light piles up) or a text character from a glyph atlas (`glyphs.js`).
+  Moving things draw into a trail picture that keeps a fading ghost of earlier frames. Bloom every second
+  frame, then vignette, grain and a soft highlight roll-off.
+- **Palette** (`palette.js`): near-black always; mint and sky by day, ember orange/red at sunset, violet at
+  dusk, cyan/magenta at night. The ground and still layer are rebuilt only when the colours visibly move.
+- **Ground** (`ground.js`, rewritten): faint topographic lines and a graph-paper dot grid across the void;
+  each icon group sits inside glowing contour rings (bright edge, fainter rings outward, a dashed outer
+  ring) taken straight from the land field; the inside of a clearing is darker so labels read; districts
+  become a faint circuit with nodes at lane crossings. The field engine from milestone 1 is unchanged.
+- **Still layer** (`flora.js`): branching line fronds and grass tufts (dense at the edges, sparse in the
+  middle, swaying in the shader), twinkling ASCII stars, a few big star glints, dotted traces along paths,
+  ringed beacons, and a line "specimen" flower in each empty district slot. Quiet within about 25 px of icons.
+- **Creatures** (`creatures.js`): eight-legged walkers with two-bone IK legs and alternating stepping, which
+  travel the paths, gather beside icon groups, come to look where an icon was dropped, keep apart from each
+  other and stop at a polite distance from the cursor (with a ring drawn round it); jellyfish with pulsing
+  bells and trailing tentacle chains, avoiding icons and the cursor; an ASCII moth; light packets running
+  along paths; characters orbiting each icon group along its contour rings; ripples from a drop. On a full
+  desktop the walkers shrink and keep to the lanes and drifters only appear if there is open void.
+- **Status line**: a small monospace readout in whichever corner is furthest from icons.
+- **Cursor** (Rust): `desktop::cursor_pos` plus a `cursor` event from the watch thread ten times a second
+  while the desktop is visible, only when it moved. The thread now wakes every 100 ms; icon reads keep
+  their old pace (250 ms while the mouse is busy, 2 s otherwise).
+- Removed: `sprites.js`, `filler.js`, `villagers.js` (all still in `v2-painted`). The village scenery in
+  `world.js` is kept behind a sprite set and skipped when none is given.
+
+Measured (real app): **6.9 to 8.6 % of one core, 391 to 394 MB** animating; **0.5 %, 403 MB** covered.
+Screenshots: `docs/milestones/07-codeart-*`. Real desktop checked (kept out of the repo).
+
 ## Summary and what is left
 
 All six milestones are in, including the villager and animal art for milestone 4 (generated a day late).
