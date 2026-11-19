@@ -62,12 +62,16 @@
     for (let i = 0; i < 4; i++) birds.push(newBird(true));
     spritesDirty = true; glowKey = '';
     HS.app = { world, villagers, icons };
+    if (paused) tick(0);
   }
 
   function onIconsChanged(drop) {
-    world.update(icons.rects(), drop);
-    villagers.worldChanged(drop);
+    // While paused (desktop hidden) there is no animation: the change is applied at once and
+    // painted a single time, so the desktop is already correct when it comes back into view.
+    world.update(icons.rects(), paused ? null : drop);
+    villagers.worldChanged(paused ? null : drop);
     spritesDirty = true;
+    if (paused) tick(0);
   }
 
   function newBird(anywhere) {
@@ -169,6 +173,11 @@
     const glow = sprites.glow;
     for (const hs of world.allHouses()) {
       if (hs.scale < 0.9) continue;
+      if (hs.sp.glowAt) {   // painted houses: a warm glow across the front
+        const a = hs.sp.glowAt;
+        gg.globalAlpha = level * 0.75;
+        gg.drawImage(glow, hs.x + a.x - a.size / 2, hs.y + a.y - a.size / 2, a.size, a.size);
+      }
       for (const win of hs.sp.windows) {
         const x = hs.x + win.x, y = hs.y + win.y;
         gg.globalAlpha = level * 0.92;
@@ -195,8 +204,13 @@
     // (villagers only stroll, and the lower rate saves about a third of the work).
     if (now - last < (spritesDirty || world.animating || !world.groundSettled ? 31 : 48)) return;
     const dt = Math.min(0.1, (now - last) / 1000);
-    last = now; time += dt;
+    last = now;
+    tick(dt);
+  }
 
+  // One step of the world plus one repaint of whatever needs it.
+  function tick(dt) {
+    time += dt;
     const h = hourNow();
     const night = keyed(NIGHT, h)[0];
     applyTint(keyed(AMBIENT, h));
@@ -216,7 +230,10 @@
     }
   }
   function setPaused(p) {
+    const was = paused;
     paused = p;
+    // going to sleep: finish any half-done rearranging so the picture left on screen is complete
+    if (p && !was && world) { world.update(icons.rects(), null); villagers.worldChanged(null); spritesDirty = true; tick(0); }
     if (!p && !running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
   }
   HS.setPaused = setPaused;
@@ -234,6 +251,9 @@
   let resizeTimer = 0;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 200); });
 
+  // Start with the code-drawn placeholders, then swap in the painted art as soon as it has loaded.
   build();
   requestAnimationFrame(frame);
+  HS.loadArt(sprites).then(() => { tintKey = ''; build(); });
+  ground.loadTextures(() => { if (world) { world.dirty = true; if (paused) tick(0); } });
 })(window.HS);

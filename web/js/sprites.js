@@ -229,12 +229,69 @@
     return out;
   };
 
+  function register(s) {
+    allSprites = [s.lantern];
+    for (const k of Object.keys(s)) if (Array.isArray(s[k])) allSprites.push(...s[k]);
+  }
   const build = HS.buildSprites;
   HS.buildSprites = function () {
     const s = build();
-    allSprites = [s.lantern];
-    for (const k of Object.keys(s)) if (Array.isArray(s[k])) allSprites.push(...s[k]);
+    s.decor = [];
+    register(s);
     return s;
+  };
+
+  // --- painted art ---------------------------------------------------------------
+  // The real art: individual transparent PNGs in web/art (cut from the generated sheets by
+  // tools/cut-sprites.ps1). Each entry says which picture to use and how wide to draw it.
+  // If a picture fails to load, the code-drawn placeholder for that kind simply stays.
+  const ART = {
+    house:     { dir: 'houses', items: [[0, 72], [1, 72], [2, 72], [3, 72], [4, 72], [5, 72], [6, 72], [7, 72], [8, 72], [9, 72], [1, 88, 4], [3, 88, 4], [6, 88, 4], [9, 88, 4]] },
+    tree:      { dir: 'trees', items: [[0, 46], [1, 46], [2, 46], [3, 46], [4, 46], [0, 56], [1, 56], [2, 56], [3, 56], [4, 56]] },
+    pine:      { dir: 'trees', items: [[5, 34], [6, 34], [7, 32], [5, 40], [6, 40]] },
+    cypress:   { dir: 'trees', items: [[8, 15], [9, 14]] },
+    bush:      { dir: 'trees', items: [[10, 28], [11, 28], [12, 30]] },
+    blossom:   { dir: 'trees', items: [[13, 42], [14, 40]] },
+    flowerbed: { dir: 'props', items: [[5, 46]] },
+    tub:       { dir: 'props', items: [[6, 18], [7, 19]] },
+    lantern:   { dir: 'props', items: [[1, 11]] },
+    decor:     { dir: 'props', items: [[0, 32], [2, 46], [3, 44], [4, 30], [8, 30], [9, 16]] },
+  };
+
+  function fromImage(img, drawW, kind, cells) {
+    const iw = drawW, ih = drawW * img.height / img.width, pad = 4;
+    const w = iw + pad * 2, h = ih + 5;
+    const sp = make(w, h, w / 2, ih * 0.97, (g) => {
+      // a soft shadow on the ground, since the painted pieces come without one
+      shadow(g, w / 2, ih * 0.965, iw * (kind === 'house' ? 0.5 : 0.4), Math.max(2, iw * (kind === 'house' ? 0.13 : 0.1)));
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(img, pad, 0, iw, ih);
+    });
+    if (kind === 'house') {
+      sp.cells = cells || 3;
+      sp.windows = [];                                           // window positions are not known for painted houses...
+      sp.glowAt = { x: 0, y: -ih * 0.24, size: iw * 1.1 };       // ...so at night the front of the house glows as a whole
+      sp.chimney = { x: -iw * 0.04, y: -ih * 0.9 };
+    }
+    return sp;
+  }
+
+  HS.loadArt = function (s) {
+    const cache = new Map();
+    const load = (src) => {
+      if (!cache.has(src)) cache.set(src, new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; }));
+      return cache.get(src);
+    };
+    const jobs = Object.keys(ART).map((kind) => {
+      const a = ART[kind];
+      return Promise.all(a.items.map((it) => load('art/' + a.dir + '/' + String(it[0]).padStart(2, '0') + '.png').then((img) => img && fromImage(img, it[1], kind, it[2]))))
+        .then((list) => {
+          const ok = list.filter(Boolean);
+          if (!ok.length) return;
+          if (kind === 'lantern') s.lantern = ok[0]; else s[kind] = ok;
+        });
+    });
+    return Promise.all(jobs).then(() => { register(s); return s; });
   };
 
   // Stamp a sprite with its "foot" at (x, y). scale shrinks it toward the foot,

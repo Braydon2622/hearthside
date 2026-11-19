@@ -105,7 +105,9 @@ fn main() {
                         watch_closely_until = std::time::Instant::now() + Duration::from_secs(3);
                     }
                     let closely = std::time::Instant::now() < watch_closely_until;
-                    if covered || (!first && !closely && last_read.elapsed() < Duration::from_secs(2)) {
+                    // (The very first read always happens, so the page has the icons even if the
+                    // app starts while a window is covering the desktop.)
+                    if !first && (covered || (!closely && last_read.elapsed() < Duration::from_secs(2))) {
                         std::thread::sleep(Duration::from_millis(250));
                         continue;
                     }

@@ -98,7 +98,8 @@
         if (v < 0.45) { if (rand() < 0.9) kind = rand() < 0.42 ? 'pine' : 'tree'; }
         else if (cy % 2 === 0 && rand() < 0.3) {
           const r = rand();
-          kind = r < 0.4 ? 'tree' : r < 0.55 ? 'blossom' : r < 0.82 ? 'bush' : 'flowerbed';
+          kind = r < 0.36 ? 'tree' : r < 0.48 ? 'blossom' : r < 0.68 ? 'bush' : r < 0.82 ? 'flowerbed' : 'decor';
+          if (kind === 'decor' && !sprites.decor.length) kind = 'bush';
         }
         if (!kind) continue;
         let fp = [c];

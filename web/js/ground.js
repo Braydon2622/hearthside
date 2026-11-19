@@ -17,6 +17,8 @@
     uniform sampler2D uField;
     uniform vec4 uGrid;     // desktop icon grid: origin x, origin y, cell width, cell height
     uniform vec3 uTint;     // time-of-day colour everything is multiplied by
+    uniform sampler2D uGrass, uCobble, uDirt, uLawn;   // painted ground textures
+    uniform float uUseTex;  // 1 once those textures have loaded
 
     float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
     float noise(vec2 p) {
@@ -73,6 +75,17 @@
       vec2 fc = floor(px / 9.0);
       float flower = step(0.93, hash(fc)) * step(length(fract(px / 9.0) - 0.5), 0.2);
       meadow = mix(meadow, mix(vec3(0.98, 0.95, 0.85), vec3(0.95, 0.62, 0.68), hash(fc + 3.0)), flower);
+      // Painted textures, when they have loaded, replace the computed colours above.
+      // (They are mirrored when repeated, which hides the seams between copies.)
+      vec3 tGrass = texture2D(uGrass, px / 180.0).rgb, tStone = texture2D(uCobble, px / 64.0).rgb;
+      vec3 tDirt = texture2D(uDirt, px / 260.0).rgb, tLawn = texture2D(uLawn, px / 240.0).rgb;
+      if (uUseTex > 0.5) {
+        grass = tGrass * (0.90 + big * 0.20);
+        grass = mix(grass, grass * vec3(1.07, 1.04, 0.90), village * 0.35);
+        dirt = tDirt;
+        stone = tStone;
+        meadow = mix(tLawn * vec3(1.06, 1.05, 0.92), mix(vec3(0.98, 0.95, 0.85), vec3(0.95, 0.62, 0.68), hash(fc + 3.0)), flower);
+      }
       vec3 plazaCol = mix(meadow, stone, smoothstep(0.40, 0.60, village + wob * 0.3));
 
       // district: a patchwork of lawn lots (one per icon slot) divided by cobbled lanes
@@ -84,6 +97,7 @@
         float lw = fbm(px / 9.0 + 4.0) * 5.0;
         float lane = max(1.0 - smoothstep(8.0, 11.0, dx + lw), 1.0 - smoothstep(5.0, 8.0, dy + lw));
         vec3 lawn = mix(vec3(0.47, 0.66, 0.33), vec3(0.58, 0.74, 0.39), fbm(px / 50.0 + 8.0));
+        if (uUseTex > 0.5) lawn = tLawn;
         lawn *= 0.95 + hash(cell) * 0.10;                 // each lot a slightly different green
         lawn *= 0.96 + fine * 0.07;
         float edge = max(1.0 - smoothstep(9.0, 17.0, dx + lw), 1.0 - smoothstep(6.0, 13.0, dy + lw));
@@ -142,6 +156,30 @@
     const uTint = gl.getUniformLocation(prog, 'uTint');
     let pixels = null;
 
+    // Load the four painted ground textures; calls done() when they are all in use.
+    this.loadTextures = function (done) {
+      const names = ['Grass', 'Cobble', 'Dirt', 'Lawn'];
+      let left = names.length, failed = false;
+      names.forEach((name, i) => {
+        const img = new Image();
+        img.onerror = () => { failed = true; if (--left === 0) done(false); };
+        img.onload = () => {
+          const t = gl.createTexture();
+          gl.activeTexture(gl.TEXTURE1 + i); gl.bindTexture(gl.TEXTURE_2D, t);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+          gl.generateMipmap(gl.TEXTURE_2D);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+          gl.uniform1i(gl.getUniformLocation(prog, 'u' + name), 1 + i);
+          gl.activeTexture(gl.TEXTURE0);
+          if (--left === 0) { if (!failed) gl.uniform1f(gl.getUniformLocation(prog, 'uUseTex'), 1); done(!failed); }
+        };
+        img.src = 'art/ground/' + name.toLowerCase() + '.png';
+      });
+    };
+
     // Redraw the ground from the world's current plaza / path / village amounts.
     this.draw = function (world) {
       const n = world.W * world.H;
@@ -153,6 +191,7 @@
         pixels[i * 4 + 3] = world.dist[i] * 255;
       }
       gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, world.W, world.H, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uWorld, world.W * HS.CS, world.H * HS.CS);
