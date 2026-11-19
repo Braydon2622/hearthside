@@ -76,6 +76,70 @@ public static class Cutter {
     return report;
   }
 
+  // One shared palette for every sprite: k-means over a sample of all opaque pixels, then every
+  // pixel snaps to its nearest palette colour, then a consistent darkening along each outline.
+  static double Dist(double r, double g, double b, double[] c) {
+    double dr = r - c[0], dg = g - c[1], db = b - c[2], rm = (r + c[0]) * 0.5;
+    return (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
+  }
+  public static string Palette(string[] dirs, int k, int edge, double edgeDark) {
+    var files = new List<string>();
+    foreach (var d in dirs) files.AddRange(System.IO.Directory.GetFiles(d, "*.png"));
+    files.Sort();
+    var imgs = new List<byte[]>(); var dims = new List<int[]>(); var rnd = new Random(7); var samples = new List<double[]>();
+    foreach (var f in files) {
+      int w, h; var px = Load(f, out w, out h); imgs.Add(px); dims.Add(new int[] { w, h });
+      double keep = Math.Min(1.0, 6000.0 / (w * h));    // about the same number of samples from every sprite
+      for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] > 200 && rnd.NextDouble() < keep) samples.Add(new double[] { px[i * 4 + 2], px[i * 4 + 1], px[i * 4] });
+    }
+    // k-means++ start
+    var C = new List<double[]>(); C.Add(samples[rnd.Next(samples.Count)]);
+    var dmin = new double[samples.Count];
+    while (C.Count < k) {
+      double sum = 0;
+      for (int i = 0; i < samples.Count; i++) { double best = double.MaxValue; foreach (var c in C) best = Math.Min(best, Dist(samples[i][0], samples[i][1], samples[i][2], c)); dmin[i] = best; sum += best; }
+      double pick = rnd.NextDouble() * sum; int j = 0; for (; j < samples.Count - 1; j++) { pick -= dmin[j]; if (pick <= 0) break; }
+      C.Add((double[])samples[j].Clone());
+    }
+    var lab = new int[samples.Count];
+    for (int it = 0; it < 16; it++) {
+      var acc = new double[k, 4];
+      for (int i = 0; i < samples.Count; i++) {
+        int bi = 0; double bd = double.MaxValue;
+        for (int c = 0; c < k; c++) { double d = Dist(samples[i][0], samples[i][1], samples[i][2], C[c]); if (d < bd) { bd = d; bi = c; } }
+        lab[i] = bi; acc[bi, 0] += samples[i][0]; acc[bi, 1] += samples[i][1]; acc[bi, 2] += samples[i][2]; acc[bi, 3]++;
+      }
+      for (int c = 0; c < k; c++) if (acc[c, 3] > 0) C[c] = new double[] { acc[c, 0] / acc[c, 3], acc[c, 1] / acc[c, 3], acc[c, 2] / acc[c, 3] };
+    }
+    C.Sort((a, b) => (a[0] * 0.3 + a[1] * 0.59 + a[2] * 0.11).CompareTo(b[0] * 0.3 + b[1] * 0.59 + b[2] * 0.11));
+    var cache = new Dictionary<int, int>();
+    for (int n = 0; n < files.Count; n++) {
+      var px = imgs[n]; int w = dims[n][0], h = dims[n][1];
+      // distance (px) from each pixel to the outside, two-pass chamfer, capped at edge+1
+      var dist = new float[w * h];
+      for (int i = 0; i < w * h; i++) dist[i] = px[i * 4 + 3] < 128 ? 0 : 1e6f;
+      for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) { int i = y * w + x; float v = dist[i]; if (v == 0) continue;
+        v = Math.Min(v, x > 0 ? dist[i - 1] + 1 : 1); v = Math.Min(v, y > 0 ? dist[i - w] + 1 : 1);
+        v = Math.Min(v, x > 0 && y > 0 ? dist[i - w - 1] + 1.414f : 1.414f); v = Math.Min(v, x < w - 1 && y > 0 ? dist[i - w + 1] + 1.414f : 1.414f); dist[i] = v; }
+      for (int y = h - 1; y >= 0; y--) for (int x = w - 1; x >= 0; x--) { int i = y * w + x; float v = dist[i]; if (v == 0) continue;
+        v = Math.Min(v, x < w - 1 ? dist[i + 1] + 1 : 1); v = Math.Min(v, y < h - 1 ? dist[i + w] + 1 : 1);
+        v = Math.Min(v, x < w - 1 && y < h - 1 ? dist[i + w + 1] + 1.414f : 1.414f); v = Math.Min(v, x > 0 && y < h - 1 ? dist[i + w - 1] + 1.414f : 1.414f); dist[i] = v; }
+      for (int i = 0; i < w * h; i++) {
+        if (px[i * 4 + 3] == 0) continue;
+        int r = px[i * 4 + 2], g = px[i * 4 + 1], b = px[i * 4], key = (r << 16) | (g << 8) | b, ci;
+        if (!cache.TryGetValue(key, out ci)) { double bd = double.MaxValue; ci = 0; for (int c = 0; c < k; c++) { double d = Dist(r, g, b, C[c]); if (d < bd) { bd = d; ci = c; } } cache[key] = ci; }
+        double f = 1.0;
+        if (dist[i] < edge) f = 1.0 - edgeDark * (1.0 - dist[i] / edge);
+        // darken toward a deep warm brown rather than black, the way a painted edge looks
+        px[i * 4 + 2] = (byte)Math.Round(C[ci][0] * f + 46 * (1 - f)); px[i * 4 + 1] = (byte)Math.Round(C[ci][1] * f + 30 * (1 - f)); px[i * 4] = (byte)Math.Round(C[ci][2] * f + 36 * (1 - f));
+      }
+      Save(px, w, h, files[n]);
+    }
+    var sb = new System.Text.StringBuilder("[");
+    for (int c = 0; c < k; c++) sb.Append((c > 0 ? ", " : "") + "\"#" + ((int)Math.Round(C[c][0])).ToString("x2") + ((int)Math.Round(C[c][1])).ToString("x2") + ((int)Math.Round(C[c][2])).ToString("x2") + "\"");
+    return sb.Append("]").ToString();
+  }
+
   public static void SplitGround(string path, string outDir, string[] names, int size) {
     using (var src = new Bitmap(path)) {
       int hw = src.Width / 2, hh = src.Height / 2, inset = 10;
@@ -90,14 +154,21 @@ public static class Cutter {
   }
 }
 '@
+# Sheets at the high eagle-eye camera (art/source/v2) win over the first-generation sheets.
 foreach ($sheet in 'houses', 'trees', 'props', 'villagers') {
-  $src = Join-Path $root "art\source\$sheet.png"
+  $src = Join-Path $root "art\source\v2\$sheet.png"
+  if (-not (Test-Path $src)) { $src = Join-Path $root "art\source\$sheet.png" }
   if (-not (Test-Path $src)) { "missing $src"; continue }
   $out = Join-Path $root "web\art\$sheet"
   if (Test-Path $out) { Remove-Item $out -Recurse -Force }
   New-Item -ItemType Directory -Force $out | Out-Null
   "${sheet}: " + (([Cutter]::CutSheet($src, $out, 1500)) -join ', ')
 }
+# one shared 28-colour palette across every sprite, then the painted edge (5 px, up to 30 % darker)
+$dirs = @('houses', 'trees', 'props', 'villagers') | ForEach-Object { Join-Path $root "web\art\$_" } | Where-Object { Test-Path $_ }
+$pal = [Cutter]::Palette([string[]]$dirs, 28, 5, 0.30)
+Set-Content -Path (Join-Path $root 'web\art\palette.json') -Value $pal -Encoding ascii
+"palette: $pal"
 $ground = Join-Path $root 'art\source\ground.png'
 if (Test-Path $ground) {
   $out = Join-Path $root 'web\art\ground'; New-Item -ItemType Directory -Force $out | Out-Null

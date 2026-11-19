@@ -256,23 +256,26 @@
   // The real art: individual transparent PNGs in web/art (cut from the generated sheets by
   // tools/cut-sprites.ps1). Each entry says which picture to use and how wide to draw it.
   // If a picture fails to load, the code-drawn placeholder for that kind simply stays.
+  // Sizes follow the high eagle-eye camera at 1920x1080: a cottage roof is about two icon cells
+  // (140-150 px) wide, a big tree crown 80-105 px, a villager about 30 px tall.
+  // Houses: [picture, width, chimney position across the roof (-0.5 left edge .. 0.5 right edge)].
   const ART = {
-    house:     { dir: 'houses', items: [[0, 72], [1, 72], [2, 72], [3, 72], [4, 72], [5, 72], [6, 72], [7, 72], [8, 72], [9, 72], [1, 88, 4], [3, 88, 4], [6, 88, 4], [9, 88, 4]] },
-    tree:      { dir: 'trees', items: [[0, 46], [1, 46], [2, 46], [3, 46], [4, 46], [0, 56], [1, 56], [2, 56], [3, 56], [4, 56]] },
-    pine:      { dir: 'trees', items: [[5, 34], [6, 34], [7, 32], [5, 40], [6, 40]] },
-    cypress:   { dir: 'trees', items: [[8, 15], [9, 14]] },
-    bush:      { dir: 'trees', items: [[10, 28], [11, 28], [12, 30]] },
-    blossom:   { dir: 'trees', items: [[13, 42], [14, 40]] },
-    flowerbed: { dir: 'props', items: [[5, 46]] },
-    tub:       { dir: 'props', items: [[6, 18], [7, 19]] },
-    lantern:   { dir: 'props', items: [[1, 11]] },
-    decor:     { dir: 'props', items: [[0, 32], [2, 46], [3, 44], [4, 30], [8, 30], [9, 16]] },
+    house:     { dir: 'houses', items: [[0, 150, 0.25], [1, 146, -0.26], [2, 148, -0.39], [3, 150, -0.27], [4, 146, 0.19], [5, 152, 0.2], [6, 148, 0.32], [7, 150, 0.32]] },
+    tree:      { dir: 'trees', items: [[0, 104], [1, 94], [5, 92], [3, 82], [0, 90], [1, 84], [7, 96]] },
+    pine:      { dir: 'trees', items: [[4, 86], [4, 76]] },
+    cypress:   { dir: 'trees', items: [[4, 28], [4, 24]] },
+    bush:      { dir: 'trees', items: [[6, 46], [1, 44], [3, 42]] },
+    blossom:   { dir: 'trees', items: [[2, 86], [6, 82]] },
+    flowerbed: { dir: 'props', items: [[6, 58]] },
+    tub:       { dir: 'props', items: [[7, 30]] },
+    lantern:   { dir: 'props', items: [[9, 26]] },
+    decor:     { dir: 'props', items: [[0, 72], [1, 52], [2, 66], [3, 46], [4, 46], [5, 40], [8, 46]] },
     // people and cats are all shrunk by the same amount, so children stay shorter than adults
     villager:  { dir: 'villagers', scale: 0.098, items: [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]] },
     cat:       { dir: 'villagers', scale: 0.062, items: [[10], [11]] },
   };
 
-  function fromImage(img, drawW, kind, cells) {
+  function fromImage(img, drawW, kind, chimneyX) {
     const iw = drawW, ih = drawW * img.height / img.width, pad = 4;
     const w = iw + pad * 2, h = ih + 5;
     const sp = make(w, h, w / 2, ih * 0.97, (g) => {
@@ -280,10 +283,9 @@
       g.drawImage(img, pad, 0, iw, ih);
     });
     if (kind === 'house') {
-      sp.cells = cells || 3;
       sp.windows = [];                                           // window positions are not known for painted houses...
-      sp.glowAt = { x: 0, y: -ih * 0.24, size: iw * 1.1 };       // ...so at night the front of the house glows as a whole
-      sp.chimney = { x: -iw * 0.04, y: -ih * 0.9 };
+      sp.glowAt = { x: 0, y: -ih * 0.07, size: iw * 0.95 };      // ...so at night the thin front wall glows as a whole
+      sp.chimney = { x: iw * (chimneyX || 0), y: -ih * 0.9 };
     }
     return sp;
   }

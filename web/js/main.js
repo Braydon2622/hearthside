@@ -93,7 +93,7 @@
     for (const v of villagers.list) if (v.state !== 'inside') extra.push({ villager: v, y: v.y });
     extra.sort((a, c) => a.y - c.y);
     let i = 0;
-    const put = (e) => { if (e.villager) HS.drawVillager(b, e.villager); else b.sprite(e.sp, e.x, e.y, e.scale, CAST[e.kind] || 6); };
+    const put = (e) => { if (e.villager) HS.drawVillager(b, e.villager); else b.sprite(e.sp, e.x, e.y, e.scale * (e.size || 1), CAST[e.kind] || 6); };
     for (const o of world.objects) {
       while (i < extra.length && extra[i].y <= o.y) put(extra[i++]);
       if (o.scale >= 0.02) b.sprite(o.sp, o.x, o.y, o.scale, CAST[o.kind] || 6);
@@ -148,7 +148,7 @@
         b.add(glow, x + win.w / 2, y + win.h / 2 + 4, 52 / 64, 52 / 64, false, 1, 1, 1, night * 0.5, 0, 0, 0);
       }
     }
-    for (const l of world.lanterns.values()) b.add(glow, l.x, l.y - 24, 84 / 64, 84 / 64, false, 1, 1, 1, night * l.scale * 0.9, 0, 0, 0);
+    for (const l of world.lanterns.values()) b.add(glow, l.x - 6, l.y - 22, 84 / 64, 84 / 64, false, 1, 1, 1, night * l.scale * 0.9, 0, 0, 0);
   }
 
   // --- main loop -------------------------------------------------------------------

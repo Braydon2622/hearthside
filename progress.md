@@ -110,4 +110,39 @@ Measured (real app, animating): **9.1 to 9.4 % of one core, 427 to 442 MB.** Cov
 Checked: `03-light-*` screenshots; shadows at 2.4x crops (soft, cool, offset bottom-right, merged where trees
 overlap); sunset is warm with lifted purple shadows; night is deep blue with warm windows and lanterns.
 
-Next: milestone 4, new hero art at the new camera.
+## Milestone 4: new hero art at the new camera (partly done: stopped by image credits)
+
+- **Generated** (Figma MCP `generate_image`, `gemini-3.1-flash-image`, all prompts in `art/SOURCES.md`): two
+  house test sheets, then trees and props. Test 1 (the brief's example prompt) was compared at on-screen size
+  against `art/style-options/H-ghibli-inspired-overhead.png`: right camera (roof fills the shape, thin wall
+  strip), about 150 px wide on screen, a little flatter and crisper than the reference. Test 2 asked for looser
+  gouache and came out more painterly, but the camera drifted lower (big gables in perspective) and some dark
+  outlines appeared, so test 1 became the houses sheet. Trees match the camera well. Props came out closer to
+  50-60 degrees with dark outlines: usable, but the weakest sheet.
+- **Stopped**: the villager sheet was refused with "Insufficient Figma AI credits" (resets 2026-11-20 00:00 UTC).
+  Following the brief, generation stopped; the animals sheet was not attempted. Villagers and cats keep the
+  first-generation side-view art (now on the shared palette). The tool does not report a price per call; five
+  calls succeeded before the refusal.
+- **Pipeline**: `tools/cut-sprites.ps1` now prefers `art/source/v2/*.png`, then snaps every sprite (houses,
+  trees, props, villagers) to one shared 28-colour palette found by k-means over samples of all of them
+  (`web/art/palette.json`), then darkens a 5 px band along every outline by up to 30 % toward a deep warm brown.
+  The quantisation reads as flat gouache dabs and is what makes the three sheets look like one set.
+- **Scale**: cottages 146-152 px wide, big tree crowns 76-104 px (smaller in district slots), villagers about
+  30 px tall, props 26-72 px. The world lays out fewer, larger houses (6x6-cell footprint on a roomy staggered
+  grid, dealt from a shuffled deck so roof colours vary, with a garden strip kept free round each), and trees
+  on a staggered 3-cell grid so forest crowns overlap into a canopy. In districts a house now needs four empty
+  slots in a square (a cottage is two slots wide); single slots get a smaller tree or a prop that fits.
+- Grass and district lawns were pulled toward a deeper, cooler green to sit with the new art.
+
+Measured (real app, animating): **8.1 to 9.4 % of one core, 440 MB.**
+
+Checked: `04-art-*` screenshots, palette contact sheet, Fill desktop (slots and gaps furnished, nothing over
+icons), night windows glow along the thin front walls.
+
+Not done in this milestone: new villagers and the two animals (no credits). To finish once credits reset:
+generate the villager sheet with the prompt in `art/SOURCES.md` into `art/source/v2/villagers.png`, an animals
+sheet into `art/source/v2/animals.png`, re-run `tools/cut-sprites.ps1`, and point the `villager` and `cat`
+entries of `ART` in `web/js/sprites.js` at them (the cutter needs one line to include `animals`).
+Optionally regenerate props for a steeper camera without outlines.
+
+Next: milestone 5, code-drawn density.

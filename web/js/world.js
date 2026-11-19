@@ -74,48 +74,59 @@
       return o;
     };
 
-    // Houses, on a loose staggered grid so there are alleys between them.
+    // Houses, on a roomy staggered grid. Seen from high above a cottage roof is about two icon
+    // cells wide, so there are fewer, larger houses with lanes and gardens between them.
+    const HW = 6, HD = 6;   // house footprint in cells (about 144 x 144 px)
+    const pick = (list) => list[Math.floor(rand() * list.length)];
+    // houses are dealt from a shuffled deck, so every roof colour turns up before any repeats
+    let deck = [];
+    const houseDeck = () => {
+      if (!deck.length) { deck = sprites.house.slice(); for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; } }
+      return deck.pop();
+    };
     let row = 0;
-    for (let gy = 2; gy + 2 < maxRow; gy += 4, row++) {
-      for (let gx = 1 + (row % 2) * 2; gx + 5 < W; gx += 5) {
-        const cells = rand() < 0.4 ? 4 : 3;
+    for (let gy = 1; gy + HD + 1 < maxRow; gy += HD + 2, row++) {
+      for (let gx = 1 + (row % 2) * 4; gx + HW + 1 < W; gx += HW + 3) {
         const cx = gx + Math.floor(rand() * 2), cy = gy + Math.floor(rand() * 2);
-        if (cx + cells >= W || cy + 2 >= maxRow) continue;
-        if (this.village[idx(cx + (cells >> 1), cy + 1)] < 0.62 || rand() > 0.85) continue;
-        const pool = sprites.house.filter((s) => s.cells === cells);
-        const sp = pool[Math.floor(rand() * pool.length)];
+        if (cx + HW >= W || cy + HD >= maxRow) continue;
+        if (this.village[idx(cx + (HW >> 1), cy + (HD >> 1))] < 0.6 || rand() > 0.82) continue;
+        const sp = houseDeck();
         const fp = [];
-        for (let y = cy; y <= cy + 1; y++) for (let x = cx; x < cx + cells; x++) fp.push(idx(x, y));
-        const x = (cx + cells / 2) * CS, y = (cy + 2) * CS - 2;
+        for (let y = cy; y < cy + HD; y++) for (let x = cx; x < cx + HW; x++) fp.push(idx(x, y));
+        const x = (cx + HW / 2) * CS, y = (cy + HD) * CS - 2;
         const h = add({ kind: 'house', sp, x, y, cells: fp, blocking: true,
-          bbox: { x: x - sp.w / 2 + 8, y: y - sp.h + 14, w: sp.w - 16, h: sp.h - 16 },
-          door: idx(Math.floor(cx + cells / 2), cy + 2), smoke: 0 });
+          bbox: { x: x - sp.w / 2 + 8, y: y - sp.h + 10, w: sp.w - 16, h: sp.h - 12 },
+          door: idx(cx + (HW >> 1), cy + HD), smoke: 0 });
         this.houses.push(h);
-        for (let xx = cx; xx < cx + cells; xx++) occ[idx(xx, cy + 2)] = 2; // keep the doorstep clear
+        for (let xx = cx; xx < cx + HW; xx++) occ[idx(xx, cy + HD)] = 2; // keep the doorstep clear
+        for (let yy = cy - 1; yy <= cy + HD; yy++) for (let xx = cx - 1; xx <= cx + HW; xx++) {   // and a garden strip round it
+          if (xx >= 0 && yy >= 0 && xx < W && yy < H && !occ[idx(xx, yy)]) occ[idx(xx, yy)] = 3;
+        }
       }
     }
 
-    // Trees and garden things. Dense forest outside the village, sparse greenery inside.
-    const pick = (list) => list[Math.floor(rand() * list.length)];
-    for (let cy = 0; cy < H; cy++) {
-      for (let cx = cy % 2; cx < W; cx += 2) {
+    // Trees and garden things, on a staggered three-cell grid: a closed canopy of overlapping
+    // crowns in the forest, sparse greenery inside the village.
+    for (let gy = 0, r = 0; gy < H; gy += 3, r++) {
+      for (let gx = r % 2 ? 1 : 0; gx < W; gx += 3) {
+        const cx = Math.min(W - 1, gx + Math.floor(rand() * 2)), cy = Math.min(H - 1, gy + Math.floor(rand() * 2));
         const c = idx(cx, cy);
         if (occ[c]) continue;
         const v = this.village[c];
         let kind = null;
-        if (v < 0.45) { if (rand() < 0.9) kind = rand() < 0.42 ? 'pine' : 'tree'; }
-        else if (cy % 2 === 0 && rand() < 0.3) {
-          const r = rand();
-          kind = r < 0.36 ? 'tree' : r < 0.48 ? 'blossom' : r < 0.68 ? 'bush' : r < 0.82 ? 'flowerbed' : 'decor';
+        if (v < 0.45) { if (rand() < 0.88) kind = rand() < 0.3 ? 'pine' : 'tree'; }
+        else if (rand() < 0.3) {
+          const k = rand();
+          kind = k < 0.34 ? 'tree' : k < 0.5 ? 'blossom' : k < 0.66 ? 'bush' : k < 0.8 ? 'flowerbed' : 'decor';
           if (kind === 'decor' && !sprites.decor.length) kind = 'bush';
         }
         if (!kind) continue;
         let fp = [c];
-        if (kind === 'flowerbed') { if (cx + 1 >= W || occ[c + 1]) continue; fp = [c, c + 1]; }
+        if (kind === 'flowerbed' || kind === 'decor') { if (cx + 1 >= W || occ[c + 1]) continue; fp = [c, c + 1]; }
         const sp = pick(sprites[kind]);
-        const x = (cx + fp.length / 2) * CS + (rand() - 0.5) * 8, y = (cy + 1) * CS - 3 + (rand() - 0.5) * 6;
+        const x = (cx + fp.length / 2) * CS + (rand() - 0.5) * 12, y = (cy + 1) * CS - 3 + (rand() - 0.5) * 8;
         add({ kind, sp, x, y, cells: fp, blocking: true, sway: kind === 'tree' || kind === 'blossom' || kind === 'pine',
-          bbox: { x: x - sp.w / 2 + 5, y: y - sp.h + 8, w: sp.w - 10, h: sp.h - 10 } });
+          bbox: { x: x - sp.w / 2 + sp.w * 0.12, y: y - sp.h + sp.h * 0.12, w: sp.w * 0.76, h: sp.h * 0.8 } });
       }
     }
     this.objects.sort((a, b) => a.y - b.y);
@@ -388,16 +399,28 @@
       if (t && o.blocking) for (const c of o.cells) this.blocked[c] = 1;
     }
 
-    // 7. district furnishings: a house or tree in each empty slot, and small things in the gaps
-    //    between side-by-side icons (which are the only places nothing covers on a full desktop)
+    // 7. district furnishings: a house where four empty slots make a square (a cottage is two
+    //    slots wide), a tree or a prop in a single empty slot, and small things in the gaps between
+    //    side-by-side icons (which are the only places nothing covers on a full desktop)
     const wanted = new Map(), freeGaps = [];
     if (dz) {
-      const sp = this.sprites, small = sp.house.filter((s) => s.cells === 3);
-      for (const lot of dz.lots) {
-        const h = HS.hash2(lot.c * 3 + 11, lot.r * 5 + 7), pickN = (list) => list[Math.floor(HS.hash2(lot.c + 29, lot.r + 43) * list.length)];
-        const cx = lot.x + lot.w / 2;
-        if (h < 0.65) wanted.set('L' + lot.c + ',' + lot.r, { kind: 'house', sp: pickN(small), x: cx, y: lot.y + lot.h - 8 });
-        else wanted.set('L' + lot.c + ',' + lot.r, { kind: 'tree', sp: pickN(h < 0.85 ? sp.tree : sp.blossom), x: cx, y: lot.y + lot.h - 16, sway: true });
+      const sp = this.sprites, at = new Map(dz.lots.map((l) => [l.c + ',' + l.r, l])), used = new Set();
+      const lots = dz.lots.slice().sort((a, b) => a.r - b.r || a.c - b.c);
+      for (const lot of lots) {
+        const k = lot.c + ',' + lot.r;
+        if (used.has(k)) continue;
+        const pickN = (list) => list[Math.floor(HS.hash2(lot.c + 29, lot.r + 43) * list.length)];
+        const quad = [k, (lot.c + 1) + ',' + lot.r, lot.c + ',' + (lot.r + 1), (lot.c + 1) + ',' + (lot.r + 1)];
+        if (quad.every((q) => at.has(q) && !used.has(q))) {
+          quad.forEach((q) => used.add(q));
+          wanted.set('H' + k, { kind: 'house', sp: pickN(sp.house), x: lot.x + lot.w, y: lot.y + lot.h * 2 - 6, big: true });
+          continue;
+        }
+        used.add(k);
+        const h = HS.hash2(lot.c * 3 + 11, lot.r * 5 + 7), cx = lot.x + lot.w / 2;
+        const fits = sp.decor.filter((s) => s.w <= lot.w - 6);
+        if (h < 0.62 || !fits.length) wanted.set('L' + k, { kind: 'tree', sp: pickN(h < 0.4 ? sp.blossom : sp.tree), x: cx, y: lot.y + lot.h - 10, sway: true, size: 0.78 });
+        else wanted.set('L' + k, { kind: 'decor', sp: pickN(fits), x: cx, y: lot.y + lot.h - 14 });
       }
       for (const g of dz.gaps) {
         const h = HS.hash2(g.c * 7 + 3, g.r * 13 + 1), kind = HS.hash2(g.c + 91, g.r + 17), y = g.top + Math.min(52, dz.ch * 0.55);
@@ -418,7 +441,7 @@
       }
       p.target = 1;
       if (p.kind === 'house') {   // villagers go around the house, not through it
-        for (let yy = p.y - 30; yy <= p.y - 4; yy += CS / 2) for (let xx = p.x - 26; xx <= p.x + 26; xx += CS / 2) {
+        for (let yy = p.y - p.sp.h * 0.9; yy <= p.y - 4; yy += CS / 2) for (let xx = p.x - p.sp.w * 0.42; xx <= p.x + p.sp.w * 0.42; xx += CS / 2) {
           const c = this.cellOf(xx, yy); if (c !== p.door) this.blocked[c] = 1;
         }
       }

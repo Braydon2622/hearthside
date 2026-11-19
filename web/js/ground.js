@@ -83,6 +83,7 @@
       // --- grass: painted tile, two hues drifting across the meadow, brush strokes on top ---
       vec3 grass = mix(vec3(0.33, 0.52, 0.25), vec3(0.50, 0.66, 0.30), big);
       if (uUseTex > 0.5) grass = texture(uGrass, px / 200.0).rgb * mix(vec3(0.86, 0.92, 0.84), vec3(1.06, 1.04, 0.90), big);
+      grass *= vec3(0.86, 0.93, 0.90);                                              // deeper, cooler green
       grass = mix(grass, grass * vec3(1.06, 1.03, 0.86), village * 0.35);         // sunnier in the village
       grass *= 0.88 + sBig * 0.20;
       grass = mix(grass, grass * vec3(0.86, 1.02, 1.04), smoothstep(0.55, 0.85, sFine) * 0.5);   // cool strokes
@@ -133,7 +134,7 @@
         float lw = fbm(px / 9.0 + 4.0) * 5.0;
         float lane = max(1.0 - smoothstep(8.0, 10.0, dx + lw), 1.0 - smoothstep(5.0, 7.0, dy + lw));
         vec3 lawn = mix(vec3(0.47, 0.66, 0.33), vec3(0.58, 0.74, 0.39), fbm(px / 50.0 + 8.0));
-        if (uUseTex > 0.5) lawn = tLawn;
+        if (uUseTex > 0.5) lawn = tLawn * vec3(0.80, 0.92, 0.72);
         lawn *= 0.93 + hash(cell) * 0.12;                 // each lot a slightly different green
         lawn *= 0.90 + sBig * 0.16;
         // lots are slightly raised beds: dark lip toward the lane, shade on the lane under the top-left kerb
