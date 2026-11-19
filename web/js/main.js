@@ -112,7 +112,7 @@
     const extra = standing();
     const walkers = villagers.list.filter((v) => v.state !== 'inside').sort((a, b) => a.y - b.y);
     for (const v of walkers) {
-      const bx = v.x - 13, by = v.y - 36, bw = 26, bh = 41;
+      const bx = v.x - 15, by = v.y - 46, bw = 30, bh = 51;
       ag.save(); ag.beginPath(); ag.rect(bx, by, bw, bh); ag.clip();
       HS.drawVillager(ag, v);
       const front = [];

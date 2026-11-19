@@ -236,7 +236,8 @@
   const build = HS.buildSprites;
   HS.buildSprites = function () {
     const s = build();
-    s.decor = [];
+    s.decor = []; s.villager = []; s.cat = [];   // these exist only as painted art
+    HS.sprites = s;
     register(s);
     return s;
   };
@@ -256,6 +257,9 @@
     tub:       { dir: 'props', items: [[6, 18], [7, 19]] },
     lantern:   { dir: 'props', items: [[1, 11]] },
     decor:     { dir: 'props', items: [[0, 32], [2, 46], [3, 44], [4, 30], [8, 30], [9, 16]] },
+    // people and cats are all shrunk by the same amount, so children stay shorter than adults
+    villager:  { dir: 'villagers', scale: 0.098, items: [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]] },
+    cat:       { dir: 'villagers', scale: 0.062, items: [[10], [11]] },
   };
 
   function fromImage(img, drawW, kind, cells) {
@@ -263,7 +267,8 @@
     const w = iw + pad * 2, h = ih + 5;
     const sp = make(w, h, w / 2, ih * 0.97, (g) => {
       // a soft shadow on the ground, since the painted pieces come without one
-      shadow(g, w / 2, ih * 0.965, iw * (kind === 'house' ? 0.5 : 0.4), Math.max(2, iw * (kind === 'house' ? 0.13 : 0.1)));
+      // (villagers and cats get theirs drawn separately, so it stays flat while they bob about)
+      if (kind !== 'villager' && kind !== 'cat') shadow(g, w / 2, ih * 0.965, iw * (kind === 'house' ? 0.5 : 0.4), Math.max(2, iw * (kind === 'house' ? 0.13 : 0.1)));
       g.imageSmoothingQuality = 'high';
       g.drawImage(img, pad, 0, iw, ih);
     });
@@ -284,7 +289,7 @@
     };
     const jobs = Object.keys(ART).map((kind) => {
       const a = ART[kind];
-      return Promise.all(a.items.map((it) => load('art/' + a.dir + '/' + String(it[0]).padStart(2, '0') + '.png').then((img) => img && fromImage(img, it[1], kind, it[2]))))
+      return Promise.all(a.items.map((it) => load('art/' + a.dir + '/' + String(it[0]).padStart(2, '0') + '.png').then((img) => img && fromImage(img, a.scale ? img.width * a.scale : it[1], kind, it[2]))))
         .then((list) => {
           const ok = list.filter(Boolean);
           if (!ok.length) return;

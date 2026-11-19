@@ -90,7 +90,7 @@ public static class Cutter {
   }
 }
 '@
-foreach ($sheet in 'houses', 'trees', 'props') {
+foreach ($sheet in 'houses', 'trees', 'props', 'villagers') {
   $src = Join-Path $root "art\source\$sheet.png"
   if (-not (Test-Path $src)) { "missing $src"; continue }
   $out = Join-Path $root "web\art\$sheet"

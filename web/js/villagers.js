@@ -23,7 +23,7 @@
     const p = home ? w.cellCenter(home.door) : spot ? { x: spot.x, y: spot.y } : { x: w.width / 2, y: w.height / 2 };
     const v = {
       kind, home, x: p.x, y: p.y, ox: (r() - 0.5) * 10, oy: (r() - 0.5) * 8,
-      state: 'idle', timer: r() * 4, path: null, pi: 0, goingHome: false, goal: null, dest: null,
+      spi: Math.floor(r() * 1000), state: 'idle', timer: r() * 4, path: null, pi: 0, goingHome: false, goal: null, dest: null,
       speed: kind === 'cat' ? 46 : 24 + r() * 12, phase: r() * 6, hop: 0, face: 1, look: r() * 6,
       owl: r() < 0.2, tunic: TUNICS[Math.floor(r() * TUNICS.length)], hair: HAIR[Math.floor(r() * HAIR.length)],
       skin: SKIN[Math.floor(r() * SKIN.length)], hat: r() < 0.3, fur: ['#3a3532', '#d98b3a', '#e9e4da'][Math.floor(r() * 3)],
@@ -128,6 +128,19 @@
     const x = v.x, y = v.y - lift;
     g.fillStyle = 'rgba(30,45,30,.25)';
     g.beginPath(); g.ellipse(v.x, v.y + 1, v.kind === 'cat' ? 6 : 5.5, 2.3, 0, 0, 7); g.fill();
+
+    // Painted figure, if the art has loaded. There is one picture per villager, so walking is
+    // shown by bobbing and rocking it from side to side, and mirroring it to face the other way.
+    const set = HS.sprites && (v.kind === 'cat' ? HS.sprites.cat : HS.sprites.villager);
+    if (set && set.length) {
+      const sp = set[v.spi % set.length];
+      const bob = walking ? Math.abs(Math.sin(v.phase)) * 1.5 : 0;
+      const tilt = walking ? Math.sin(v.phase) * 0.09 : Math.sin(v.look * 0.7) * 0.025;
+      g.save(); g.translate(x, y - bob); g.scale(v.face, 1); g.rotate(tilt);
+      g.drawImage(sp.tinted || sp.canvas, -sp.ax, -sp.ay, sp.w, sp.h);
+      g.restore();
+      return;
+    }
 
     if (v.kind === 'cat') {
       const f = v.face, run = walking ? Math.sin(v.phase) * 2 : 0;
