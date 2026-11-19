@@ -1,14 +1,21 @@
 // Ties everything together: builds the world, runs the 30-frames-per-second loop,
 // draws the layers, and handles time of day.
+//
+// The picture is four stacked layers, bottom to top:
+//   ground   - grass, plazas, lanes (graphics card; repainted only when the ground changes)
+//   sprites  - buildings, trees, props, lanterns (repainted only when something grows or shrinks)
+//   actors   - villagers, smoke, birds (repainted every frame, but it is only a handful of things)
+//   glow     - window and lantern light at night (repainted only when the light level changes)
+// Keeping the still things on their own layers is what keeps processor use low.
 (function (HS) {
   const $ = (id) => document.getElementById(id);
-  const groundCv = $('ground'), spriteCv = $('sprites'), glowCv = $('glow'), tint = $('tint');
-  const sg = spriteCv.getContext('2d'), gg = glowCv.getContext('2d');
+  const groundCv = $('ground'), spriteCv = $('sprites'), actorCv = $('actors'), glowCv = $('glow');
+  const sg = spriteCv.getContext('2d'), ag = actorCv.getContext('2d'), gg = glowCv.getContext('2d');
   const sprites = HS.buildSprites();
   const ground = new HS.Ground(groundCv);
   let world, villagers, icons;
   const smoke = [], birds = [];
-  let time = 0;
+  let time = 0, tintKey = '', glowKey = '', spritesDirty = true;
 
   // Running inside the real Windows app (as opposed to a browser tab)? Then the icons are the
   // user's actual desktop icons, and the fake icons, fake taskbar and test panel are not needed.
@@ -33,10 +40,19 @@
   }
   const fmt = (h) => String(Math.floor(h) % 24).padStart(2, '0') + ':' + String(Math.floor((h % 1) * 60)).padStart(2, '0');
 
+  // The tint moves in small steps, and everything is re-tinted only when it actually steps.
+  function applyTint(amb) {
+    const q = amb.map((v) => Math.round(v * 64) / 64), key = q.join(',');
+    if (key === tintKey) return;
+    tintKey = key;
+    HS.setTint(q);
+    spritesDirty = true; world.dirty = true;
+  }
+
   // --- setup ------------------------------------------------------------------
   function build() {
     const w = window.innerWidth, h = window.innerHeight;
-    for (const c of [groundCv, spriteCv, glowCv]) { c.width = w; c.height = h; }
+    for (const c of [groundCv, spriteCv, actorCv, glowCv]) { c.width = w; c.height = h; }
     world = new HS.World(w, h, sprites);
     if (!icons) icons = NATIVE ? new HS.NativeIcons(onIconsChanged) : new HS.Icons($('icons'), onIconsChanged);
     else icons.reflow();
@@ -44,12 +60,14 @@
     villagers = new HS.Villagers(world);
     smoke.length = 0; birds.length = 0;
     for (let i = 0; i < 4; i++) birds.push(newBird(true));
+    spritesDirty = true; glowKey = '';
     HS.app = { world, villagers, icons };
   }
 
   function onIconsChanged(drop) {
     world.update(icons.rects(), drop);
     villagers.worldChanged(drop);
+    spritesDirty = true;
   }
 
   function newBird(anywhere) {
@@ -59,32 +77,52 @@
   }
 
   // --- drawing ----------------------------------------------------------------
-  function drawSprites(dt) {
-    const w = spriteCv.width, h = spriteCv.height;
-    sg.clearRect(0, 0, w, h);
+  // Everything that stands still, in depth order: lower on screen = drawn later = in front.
+  // world.objects is already sorted; props and lanterns are sorted here and merged in.
+  function standing() {
+    const extra = [];
+    for (const l of world.lanterns.values()) if (l.scale > 0.02) extra.push({ sp: sprites.lantern, x: l.x, y: l.y, scale: l.scale });
+    for (const p of world.props.values()) if (p.scale > 0.02) extra.push(p);
+    extra.sort((a, b) => a.y - b.y);
+    return extra;
+  }
 
-    // moving things (villagers, lanterns) sorted by depth, then merged with the buildings and
-    // trees, which are already in depth order. Lower on screen = drawn later = in front.
-    const movers = [];
-    for (const v of villagers.list) if (v.state !== 'inside') movers.push({ y: v.y, v });
-    for (const l of world.lanterns.values()) if (l.scale > 0.02) movers.push({ y: l.y, l });
-    for (const p of world.props.values()) if (p.scale > 0.02) movers.push({ y: p.y, p });
-    movers.sort((a, b) => a.y - b.y);
-    let mi = 0;
-    const flush = (y) => {
-      while (mi < movers.length && movers[mi].y <= y) {
-        const m = movers[mi++];
-        if (m.v) HS.drawVillager(sg, m.v);
-        else if (m.l) HS.drawSprite(sg, sprites.lantern, m.l.x, m.l.y, m.l.scale);
-        else HS.drawSprite(sg, m.p.sp, m.p.x, m.p.y, m.p.scale, m.p.sway ? Math.sin(time * 1.3 + m.p.phase) * 0.025 : 0);
-      }
-    };
+  function drawSprites() {
+    sg.clearRect(0, 0, spriteCv.width, spriteCv.height);
+    const extra = standing();
+    let i = 0;
     for (const o of world.objects) {
-      flush(o.y);
-      if (o.scale < 0.02) continue;
-      HS.drawSprite(sg, o.sp, o.x, o.y, o.scale, o.sway ? Math.sin(time * 1.3 + o.phase) * 0.025 : 0);
+      while (i < extra.length && extra[i].y <= o.y) { const e = extra[i++]; HS.drawSprite(sg, e.sp, e.x, e.y, e.scale); }
+      if (o.scale >= 0.02) HS.drawSprite(sg, o.sp, o.x, o.y, o.scale);
     }
-    flush(Infinity);
+    while (i < extra.length) { const e = extra[i++]; HS.drawSprite(sg, e.sp, e.x, e.y, e.scale); }
+  }
+
+  function drawActors(dt) {
+    const w = actorCv.width, h = actorCv.height;
+    ag.clearRect(0, 0, w, h);
+
+    // Villagers live on their own layer above the scenery, so anything that should be in FRONT
+    // of a villager (a tree or house lower on the screen) is re-stamped over them, inside a
+    // small box around the villager so it cannot disturb anything else.
+    const extra = standing();
+    const walkers = villagers.list.filter((v) => v.state !== 'inside').sort((a, b) => a.y - b.y);
+    for (const v of walkers) {
+      const bx = v.x - 13, by = v.y - 36, bw = 26, bh = 41;
+      ag.save(); ag.beginPath(); ag.rect(bx, by, bw, bh); ag.clip();
+      HS.drawVillager(ag, v);
+      const front = [];
+      const consider = (o) => {
+        if (o.y <= v.y || o.scale < 0.02 || Math.abs(o.x - v.x) > 80 || o.y - v.y > 120) return;
+        const sx = o.x - o.sp.ax * o.scale, sy = o.y - o.sp.ay * o.scale;
+        if (sx < bx + bw && sx + o.sp.w * o.scale > bx && sy < by + bh && sy + o.sp.h * o.scale > by) front.push(o);
+      };
+      for (const o of world.objects) consider(o);
+      for (const o of extra) consider(o);
+      front.sort((a, b) => a.y - b.y);
+      for (const o of front) HS.drawSprite(ag, o.sp, o.x, o.y, o.scale);
+      ag.restore();
+    }
 
     // chimney smoke
     for (const hs of world.allHouses()) {
@@ -95,13 +133,14 @@
         smoke.push({ x: hs.x + hs.sp.chimney.x, y: hs.y + hs.sp.chimney.y, vx: 5 + Math.random() * 5, vy: -11 - Math.random() * 5, life: 0, max: 2.6 + Math.random() * 1.2 });
       }
     }
+    const t = HS.tint, smokeRgb = Math.round(245 * t[0]) + ',' + Math.round(242 * t[1]) + ',' + Math.round(235 * t[2]);
     for (let i = smoke.length - 1; i >= 0; i--) {
       const p = smoke[i];
       p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt;
       if (p.life >= p.max) { smoke.splice(i, 1); continue; }
-      const t = p.life / p.max;
-      sg.fillStyle = 'rgba(245,242,235,' + (0.5 * (1 - t)).toFixed(3) + ')';
-      sg.beginPath(); sg.arc(p.x, p.y, 2.5 + t * 6, 0, 7); sg.fill();
+      const k = p.life / p.max;
+      ag.fillStyle = 'rgba(' + smokeRgb + ',' + (0.5 * (1 - k)).toFixed(3) + ')';
+      ag.beginPath(); ag.arc(p.x, p.y, 2.5 + k * 6, 0, 7); ag.fill();
     }
 
     // birds high above, with their shadows on the ground
@@ -111,58 +150,77 @@
       b.x += b.vx * dt; b.y += b.vy * dt; b.phase += dt * 9;
       if (b.x < -60 || b.x > w + 60) { birds[i] = newBird(false); continue; }
       const flap = Math.sin(b.phase) * 4;
-      sg.lineCap = 'round'; sg.lineWidth = 2;
-      for (const [ox, oy, col] of [[16, 30, 'rgba(30,45,30,.2)'], [0, 0, '#f6f3ea']]) {
-        sg.strokeStyle = col;
-        sg.beginPath(); sg.moveTo(b.x + ox - 7, b.y + oy - flap); sg.lineTo(b.x + ox, b.y + oy); sg.lineTo(b.x + ox + 7, b.y + oy - flap); sg.stroke();
+      ag.lineCap = 'round'; ag.lineWidth = 2;
+      for (const [ox, oy, col] of [[16, 30, 'rgba(30,45,30,.2)'], [0, 0, HS.tc('#f6f3ea')]]) {
+        ag.strokeStyle = col;
+        ag.beginPath(); ag.moveTo(b.x + ox - 7, b.y + oy - flap); ag.lineTo(b.x + ox, b.y + oy); ag.lineTo(b.x + ox + 7, b.y + oy - flap); ag.stroke();
       }
     }
   }
 
-  function drawGlow(night) {
+  // Night lights. Repainted only when the light level steps or the scenery changed.
+  function drawGlow(night, force) {
+    const level = Math.round(night * 40) / 40, key = level + ':' + world.version;
+    if (!force && key === glowKey) return;
+    glowKey = key;
+    glowCv.style.display = level < 0.02 ? 'none' : 'block';
     gg.clearRect(0, 0, glowCv.width, glowCv.height);
-    if (night < 0.02) return;
+    if (level < 0.02) return;
     const glow = sprites.glow;
     for (const hs of world.allHouses()) {
       if (hs.scale < 0.9) continue;
-      const flick = 0.9 + Math.sin(time * 3 + hs.phase * 5) * 0.06;
       for (const win of hs.sp.windows) {
         const x = hs.x + win.x, y = hs.y + win.y;
-        gg.globalAlpha = night * flick;
+        gg.globalAlpha = level * 0.92;
         gg.fillStyle = '#ffd98a'; gg.fillRect(x, y, win.w, win.h);
-        gg.globalAlpha = night * 0.55 * flick;
+        gg.globalAlpha = level * 0.5;
         gg.drawImage(glow, x + win.w / 2 - 26, y + win.h / 2 - 22, 52, 52);
       }
     }
     for (const l of world.lanterns.values()) {
-      gg.globalAlpha = night * l.scale;
+      gg.globalAlpha = level * l.scale * 0.9;
       gg.drawImage(glow, l.x - 42, l.y - 24 - 38, 84, 84);
     }
     gg.globalAlpha = 1;
   }
 
   // --- main loop, capped at 30 frames per second --------------------------------
-  let last = 0;
+  // When a maximised or full-screen window hides the desktop, the Windows side tells us and the
+  // loop stops completely until the desktop is visible again.
+  let last = 0, paused = false, running = true;
   function frame(now) {
+    if (paused) { running = false; return; }
     requestAnimationFrame(frame);
-    if (now - last < 31) return;
+    // 30 frames a second while the village is rearranging, 20 the rest of the time
+    // (villagers only stroll, and the lower rate saves about a third of the work).
+    if (now - last < (spritesDirty || world.animating || !world.groundSettled ? 31 : 48)) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now; time += dt;
 
     const h = hourNow();
-    const amb = keyed(AMBIENT, h), night = keyed(NIGHT, h)[0];
-    tint.style.backgroundColor = 'rgb(' + amb.map((v) => Math.round(v * 255)).join(',') + ')';
+    const night = keyed(NIGHT, h)[0];
+    applyTint(keyed(AMBIENT, h));
 
     world.step(dt);
     villagers.step(dt, night);
     if (world.dirty) { ground.draw(world); world.dirty = false; }
-    drawSprites(dt);
-    drawGlow(night);
+    const repaint = spritesDirty || world.animating;
+    if (repaint) { drawSprites(); spritesDirty = false; }
+    drawActors(dt);
+    drawGlow(night, repaint);
 
-    $('timeLabel').textContent = fmt(h);
-    $('taskClock').textContent = fmt(h);
-    if ($('liveClock').checked) $('timeSlider').value = h;
+    if (!NATIVE) {
+      $('timeLabel').textContent = fmt(h);
+      $('taskClock').textContent = fmt(h);
+      if ($('liveClock').checked) $('timeSlider').value = h;
+    }
   }
+  function setPaused(p) {
+    paused = p;
+    if (!p && !running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
+  }
+  HS.setPaused = setPaused;
+  if (NATIVE) window.__TAURI__.event.listen('wallpaper-covered', (e) => setPaused(!!e.payload));
 
   $('timeSlider').addEventListener('input', () => { $('liveClock').checked = false; });
   $('addIcon').addEventListener('click', () => icons.add());

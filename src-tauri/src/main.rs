@@ -61,7 +61,11 @@ fn main() {
             std::thread::spawn(move || {
                 let mut last: Vec<desktop::IconRect> = Vec::new();
                 let mut first = true;
+                let mut covered = false;
+                let no_pause = std::env::var_os("HEARTHSIDE_NO_PAUSE").is_some();
                 let mut last_fix = std::time::Instant::now();
+                let mut last_read = std::time::Instant::now();
+                let mut watch_closely_until = std::time::Instant::now();
                 loop {
                     // If anything pushed us out of place (Explorer restarting, a style reset),
                     // quietly slide back behind the icons.
@@ -72,6 +76,27 @@ fn main() {
                             Err(e) => eprintln!("could not re-attach: {e}"),
                         }
                     }
+                    // Nobody can see the wallpaper behind a maximised window: tell the page to
+                    // stop animating, and skip reading the icons until the desktop is back.
+                    // (Setting HEARTHSIDE_NO_PAUSE keeps it running regardless, for measuring.)
+                    let now_covered = !no_pause && desktop::is_desktop_covered(hwnd);
+                    if now_covered != covered {
+                        covered = now_covered;
+                        println!("desktop covered: {covered}");
+                        let _ = handle.emit("wallpaper-covered", covered);
+                    }
+                    // Asking Explorer for every icon's position is the costly part, so do it often
+                    // only while the mouse is in use (icons move by being dragged). Otherwise a
+                    // slow check every two seconds catches things like a newly saved file.
+                    if desktop::mouse_active() {
+                        watch_closely_until = std::time::Instant::now() + Duration::from_secs(3);
+                    }
+                    let closely = std::time::Instant::now() < watch_closely_until;
+                    if covered || (!first && !closely && last_read.elapsed() < Duration::from_secs(2)) {
+                        std::thread::sleep(Duration::from_millis(250));
+                        continue;
+                    }
+                    last_read = std::time::Instant::now();
                     match desktop::read_icons(hwnd) {
                         Ok(now) => {
                             if first || now != last {
@@ -84,7 +109,7 @@ fn main() {
                         }
                         Err(e) => eprintln!("could not read icons: {e}"),
                     }
-                    std::thread::sleep(Duration::from_millis(400));
+                    std::thread::sleep(Duration::from_millis(250));
                 }
             });
             Ok(())

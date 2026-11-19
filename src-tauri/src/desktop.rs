@@ -11,6 +11,9 @@
 use serde::Serialize;
 use windows::core::{w, Interface, BOOL};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow, GetWindowRect, IsZoomed};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, IServiceProvider, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
 };
@@ -127,9 +130,50 @@ pub fn is_behind_icons(raw: isize) -> bool {
     }
 }
 
+/// True when the window the user is working in hides the desktop: it is maximised or covers the
+/// whole monitor our wallpaper is on. The wallpaper stops animating while this is the case,
+/// because nobody can see it.
+pub fn is_desktop_covered(raw: isize) -> bool {
+    unsafe {
+        let ours = hwnd(raw);
+        let front = GetForegroundWindow();
+        if front.0.is_null() {
+            return false;
+        }
+        // The desktop itself and the taskbar being in front do not hide the desktop.
+        let mut name = [0u16; 64];
+        let len = GetClassNameW(front, &mut name) as usize;
+        let class = String::from_utf16_lossy(&name[..len]);
+        if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+            return false;
+        }
+        let monitor = MonitorFromWindow(front, MONITOR_DEFAULTTONEAREST);
+        if monitor != MonitorFromWindow(ours, MONITOR_DEFAULTTONEAREST) {
+            return false;
+        }
+        if IsZoomed(front).as_bool() {
+            return true;
+        }
+        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        let mut rc = RECT::default();
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() || GetWindowRect(front, &mut rc).is_err() {
+            return false;
+        }
+        let m = info.rcMonitor;
+        rc.left <= m.left && rc.top <= m.top && rc.right >= m.right && rc.bottom >= m.bottom
+    }
+}
+
 thread_local! {
     // COM (the system Explorer speaks) has to be switched on once per thread that uses it.
     static COM_READY: bool = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
+    static DESKTOP_VIEW: std::cell::RefCell<Option<IFolderView>> = const { std::cell::RefCell::new(None) };
+}
+
+/// True if the left mouse button is down, or was pressed since the last time this was asked.
+/// Icons only move while someone is dragging, so this tells the watcher when to look closely.
+pub fn mouse_active() -> bool {
+    unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8001) != 0 }
 }
 
 /// Asks Explorer for the position of every desktop icon.
@@ -140,6 +184,25 @@ pub fn read_icons(our_window: isize) -> Result<Vec<IconRect>, String> {
 }
 
 unsafe fn read_icons_inner(our_window: isize) -> windows::core::Result<Vec<IconRect>> {
+    // Finding the desktop's view takes several round trips to Explorer, so it is found once and
+    // kept. If Explorer restarts the kept one stops working; then it is dropped and found again.
+    let cached = DESKTOP_VIEW.with(|v| v.borrow().clone());
+    let view = match cached {
+        Some(v) => v,
+        None => {
+            let v = find_desktop_view()?;
+            DESKTOP_VIEW.with(|slot| *slot.borrow_mut() = Some(v.clone()));
+            v
+        }
+    };
+    let result = read_positions(&view, our_window);
+    if result.is_err() {
+        DESKTOP_VIEW.with(|slot| *slot.borrow_mut() = None);
+    }
+    result
+}
+
+unsafe fn find_desktop_view() -> windows::core::Result<IFolderView> {
     // Explorer keeps a list of its open windows; the desktop is one of them.
     let shell_windows: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)?;
     let mut desktop_hwnd = 0i32;
@@ -152,8 +215,10 @@ unsafe fn read_icons_inner(our_window: isize) -> windows::core::Result<Vec<IconR
     )?;
     let provider: IServiceProvider = desktop.cast()?;
     let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
-    let view: IFolderView = browser.QueryActiveShellView()?.cast()?;
+    browser.QueryActiveShellView()?.cast()
+}
 
+unsafe fn read_positions(view: &IFolderView, our_window: isize) -> windows::core::Result<Vec<IconRect>> {
     // Size of one icon cell (icon plus label), and the icons themselves.
     let mut spacing = POINT::default();
     view.GetSpacing(&mut spacing)?;

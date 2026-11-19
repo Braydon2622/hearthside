@@ -421,7 +421,7 @@
       }
     }
     for (const f of freeGaps) { const c = this.cellOf(f.x, f.y); if (!this.blocked[c]) this.spots.push({ cell: c, x: f.x, y: f.y, loose: false }); }
-    this.dirty = true;
+    this.dirty = true; this.groundSettled = false;
     this.version++;
   };
 
@@ -429,20 +429,26 @@
   P.step = function (dt) {
     const N = this.W * this.H, k = 1 - Math.exp(-dt * 7);
     let moving = false;
-    for (let c = 0; c < N; c++) {
+    for (let c = 0; c < N && !this.groundSettled; c++) {
       const dp = this.plazaT[c] - this.plaza[c], dq = this.pathT[c] - this.path[c], dd = this.distT[c] - this.dist[c];
       if (Math.abs(dp) < 0.004 && Math.abs(dq) < 0.004 && Math.abs(dd) < 0.004) continue;
       moving = true;
       if (this.delay[c] > 0) { this.delay[c] -= dt; continue; }
       this.plaza[c] += dp * k; this.path[c] += dq * k; this.dist[c] += dd * k;
     }
+    // "animating" tells the drawing code whether the still scenery needs repainting this frame
+    let anim = false;
+    for (const o of this.objects) if (o.scale !== o.target) { anim = true; break; }
+    for (const p of this.props.values()) if (p.scale !== p.target) { anim = true; break; }
+    for (const l of this.lanterns.values()) if (l.scale !== l.target) { anim = true; break; }
+    this.animating = anim;
     for (const [key, p] of this.props) {
       if (p.scale === p.target) continue;
       if (p.delay > 0) { p.delay -= dt; continue; }
       p.scale += (p.target - p.scale) * (1 - Math.exp(-dt * (p.target ? 5 : 12)));
       if (Math.abs(p.target - p.scale) < 0.01) { p.scale = p.target; if (!p.target) this.props.delete(key); }
     }
-    if (moving) this.dirty = true;
+    if (moving) this.dirty = true; else this.groundSettled = true;   // nothing left to animate until the next update
     for (const o of this.objects) {
       if (o.scale === o.target) continue;
       if (o.delay > 0) { o.delay -= dt; continue; }
@@ -452,6 +458,7 @@
     for (const [c, l] of this.lanterns) {
       if (l.delay > 0) { l.delay -= dt; continue; }
       l.scale += (l.target - l.scale) * (1 - Math.exp(-dt * 8));
+      if (Math.abs(l.target - l.scale) < 0.02) l.scale = l.target;
       if (!l.target && l.scale < 0.02) this.lanterns.delete(c);
     }
   };

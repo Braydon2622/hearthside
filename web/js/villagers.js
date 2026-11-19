@@ -131,10 +131,10 @@
 
     if (v.kind === 'cat') {
       const f = v.face, run = walking ? Math.sin(v.phase) * 2 : 0;
-      g.strokeStyle = v.fur; g.lineWidth = 2; g.lineCap = 'round';
+      g.strokeStyle = HS.tc(v.fur); g.lineWidth = 2; g.lineCap = 'round';
       g.beginPath(); g.moveTo(x - 5 * f, y - 5); g.quadraticCurveTo(x - 10 * f, y - 8, x - 9 * f, y - 12 + Math.sin(v.look * 2) * 1.5); g.stroke(); // tail
       g.beginPath(); g.moveTo(x - 3, y - 3); g.lineTo(x - 3 + run, y); g.moveTo(x + 3, y - 3); g.lineTo(x + 3 - run, y); g.stroke();
-      g.fillStyle = v.fur;
+      g.fillStyle = HS.tc(v.fur);
       g.beginPath(); g.ellipse(x, y - 5, 6, 3.4, 0, 0, 7); g.fill();
       g.beginPath(); g.arc(x + 5.5 * f, y - 8, 3.2, 0, 7); g.fill();
       g.beginPath(); g.moveTo(x + 3.5 * f, y - 10); g.lineTo(x + 4 * f, y - 13.5); g.lineTo(x + 5.8 * f, y - 10.5);
@@ -145,18 +145,18 @@
     const bob = walking ? Math.abs(Math.sin(v.phase)) * 1.4 : 0;
     const swing = walking ? Math.sin(v.phase) * 2.6 : 0;
     const turn = walking ? v.face * 0.8 : Math.sin(v.look * 0.7) * 1.2;   // idle villagers look around
-    g.strokeStyle = '#4a3a30'; g.lineWidth = 2.2; g.lineCap = 'round';
+    g.strokeStyle = HS.tc('#4a3a30'); g.lineWidth = 2.2; g.lineCap = 'round';
     g.beginPath(); g.moveTo(x - 2, y - 6); g.lineTo(x - 2 + swing, y); g.moveTo(x + 2, y - 6); g.lineTo(x + 2 - swing, y); g.stroke();
-    g.fillStyle = v.tunic;
+    g.fillStyle = HS.tc(v.tunic);
     g.beginPath(); g.roundRect(x - 4.8, y - 17 - bob, 9.6, 12, 3.5); g.fill();
-    g.fillStyle = v.skin;
+    g.fillStyle = HS.tc(v.skin);
     g.beginPath(); g.arc(x + turn * 0.5, y - 21 - bob, 4.6, 0, 7); g.fill();
     if (v.hat) {
-      g.fillStyle = '#e3c779';
+      g.fillStyle = HS.tc('#e3c779');
       g.beginPath(); g.ellipse(x + turn * 0.5, y - 23.5 - bob, 7.5, 2.4, 0, 0, 7); g.fill();
       g.beginPath(); g.arc(x + turn * 0.5, y - 24.5 - bob, 3.6, Math.PI, 0); g.fill();
     } else {
-      g.fillStyle = v.hair;
+      g.fillStyle = HS.tc(v.hair);
       g.beginPath(); g.arc(x + turn * 0.5 - turn * 0.6, y - 22 - bob, 4.7, Math.PI * 0.95, Math.PI * 2.05); g.fill();
     }
   };

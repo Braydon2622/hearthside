@@ -16,6 +16,7 @@
     uniform vec2 uWorld;    // world size in pixels (cells * cell size)
     uniform sampler2D uField;
     uniform vec4 uGrid;     // desktop icon grid: origin x, origin y, cell width, cell height
+    uniform vec3 uTint;     // time-of-day colour everything is multiplied by
 
     float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
     float noise(vec2 p) {
@@ -99,7 +100,7 @@
       col = mix(col, dirt, path);
       col = mix(col, plazaCol, plaza);
 
-      gl_FragColor = vec4(col, 1.0);
+      gl_FragColor = vec4(col * uTint, 1.0);
     }
   `;
 
@@ -138,6 +139,7 @@
     const uRes = gl.getUniformLocation(prog, 'uRes');
     const uWorld = gl.getUniformLocation(prog, 'uWorld');
     const uGrid = gl.getUniformLocation(prog, 'uGrid');
+    const uTint = gl.getUniformLocation(prog, 'uTint');
     let pixels = null;
 
     // Redraw the ground from the world's current plaza / path / village amounts.
@@ -155,6 +157,7 @@
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uWorld, world.W * HS.CS, world.H * HS.CS);
       gl.uniform4f(uGrid, world.grid.ox, world.grid.oy, world.grid.cw, world.grid.ch);
+      gl.uniform3f(uTint, HS.tint[0], HS.tint[1], HS.tint[2]);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
   };

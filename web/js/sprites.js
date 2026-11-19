@@ -196,16 +196,50 @@
     return s;
   };
 
+  // --- time-of-day tint ---------------------------------------------------------
+  // Instead of laying a coloured sheet over the whole screen every frame (expensive), the
+  // tint is baked in: each sprite keeps a pre-tinted copy, and plain colours go through HS.tc.
+  HS.tint = [1, 1, 1];
+  const colorCache = new Map();
+  let allSprites = [];
+
+  HS.setTint = function (rgb) {
+    HS.tint = rgb; colorCache.clear();
+    const neutral = rgb[0] === 1 && rgb[1] === 1 && rgb[2] === 1;
+    const css = 'rgb(' + rgb.map((v) => Math.round(v * 255)).join(',') + ')';
+    for (const sp of allSprites) {
+      if (neutral) { sp.tinted = null; continue; }
+      const c = sp.tinted || (sp.tinted = document.createElement('canvas'));
+      c.width = sp.canvas.width; c.height = sp.canvas.height;
+      const g = c.getContext('2d');
+      g.globalCompositeOperation = 'source-over'; g.drawImage(sp.canvas, 0, 0);
+      g.globalCompositeOperation = 'multiply'; g.fillStyle = css; g.fillRect(0, 0, c.width, c.height);
+      g.globalCompositeOperation = 'destination-in'; g.drawImage(sp.canvas, 0, 0);   // keep the original outline
+    }
+  };
+
+  // A '#rrggbb' colour with the current tint applied.
+  HS.tc = function (hex) {
+    let out = colorCache.get(hex);
+    if (!out) {
+      const n = parseInt(hex.slice(1), 16), t = HS.tint;
+      out = 'rgb(' + Math.round(((n >> 16) & 255) * t[0]) + ',' + Math.round(((n >> 8) & 255) * t[1]) + ',' + Math.round((n & 255) * t[2]) + ')';
+      colorCache.set(hex, out);
+    }
+    return out;
+  };
+
+  const build = HS.buildSprites;
+  HS.buildSprites = function () {
+    const s = build();
+    allSprites = [s.lantern];
+    for (const k of Object.keys(s)) if (Array.isArray(s[k])) allSprites.push(...s[k]);
+    return s;
+  };
+
   // Stamp a sprite with its "foot" at (x, y). scale shrinks it toward the foot,
   // which is how buildings and trees tuck away and grow back.
-  HS.drawSprite = function (g, sp, x, y, scale, lean) {
-    const w = sp.w * scale, h = sp.h * scale;
-    if (lean) {
-      g.save(); g.translate(x, y); g.transform(1, 0, lean, 1, 0, 0);
-      g.drawImage(sp.canvas, -sp.ax * scale, -sp.ay * scale, w, h);
-      g.restore();
-    } else {
-      g.drawImage(sp.canvas, x - sp.ax * scale, y - sp.ay * scale, w, h);
-    }
+  HS.drawSprite = function (g, sp, x, y, scale) {
+    g.drawImage(sp.tinted || sp.canvas, x - sp.ax * scale, y - sp.ay * scale, sp.w * scale, sp.h * scale);
   };
 })(window.HS);
