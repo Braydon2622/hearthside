@@ -11,8 +11,8 @@
 use serde::Serialize;
 use windows::core::{w, Interface, BOOL};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST};
-use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowRect, IsZoomed};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow, GetWindowRect, IsZoomed};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, IServiceProvider, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
@@ -168,19 +168,6 @@ thread_local! {
     // COM (the system Explorer speaks) has to be switched on once per thread that uses it.
     static COM_READY: bool = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
     static DESKTOP_VIEW: std::cell::RefCell<Option<IFolderView>> = const { std::cell::RefCell::new(None) };
-}
-
-/// Where the mouse cursor is, in the web page's own pixel units (relative to our window).
-pub fn cursor_pos(raw: isize) -> Option<(i32, i32)> {
-    unsafe {
-        let mut pt = POINT::default();
-        GetCursorPos(&mut pt).ok()?;
-        if !ScreenToClient(hwnd(raw), &mut pt).as_bool() {
-            return None;
-        }
-        let scale = GetDpiForWindow(hwnd(raw)).max(96) as f64 / 96.0;
-        Some(((pt.x as f64 / scale).round() as i32, (pt.y as f64 / scale).round() as i32))
-    }
 }
 
 /// True if the left mouse button is down, or was pressed since the last time this was asked.
