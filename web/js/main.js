@@ -220,7 +220,11 @@
     if (!p && !running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
   }
   HS.setPaused = setPaused;
-  if (NATIVE) window.__TAURI__.event.listen('wallpaper-covered', (e) => setPaused(!!e.payload));
+  if (NATIVE) {
+    window.__TAURI__.event.listen('wallpaper-covered', (e) => setPaused(!!e.payload));
+    // the first message may have been sent before this page finished loading, so also ask
+    window.__TAURI__.core.invoke('get_covered').then((c) => setPaused(!!c)).catch(() => {});
+  }
 
   $('timeSlider').addEventListener('input', () => { $('liveClock').checked = false; });
   $('addIcon').addEventListener('click', () => icons.add());

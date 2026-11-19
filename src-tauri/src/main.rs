@@ -8,6 +8,7 @@
 
 mod desktop;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
@@ -23,10 +24,21 @@ fn get_icons(state: tauri::State<Icons>) -> Vec<desktop::IconRect> {
     state.0.lock().unwrap().clone()
 }
 
+/// Whether a window is currently hiding the desktop, kept so the page can ask when it loads
+/// (it may finish loading after the first "covered" message was sent).
+#[derive(Default)]
+struct Covered(AtomicBool);
+
+#[tauri::command]
+fn get_covered(state: tauri::State<Covered>) -> bool {
+    state.0.load(Ordering::Relaxed)
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Icons::default())
-        .invoke_handler(tauri::generate_handler![get_icons])
+        .manage(Covered::default())
+        .invoke_handler(tauri::generate_handler![get_icons, get_covered])
         .setup(|app| {
             let window = app.get_webview_window("wallpaper").expect("wallpaper window is defined in tauri.conf.json");
 
@@ -83,6 +95,7 @@ fn main() {
                     if now_covered != covered {
                         covered = now_covered;
                         println!("desktop covered: {covered}");
+                        handle.state::<Covered>().0.store(covered, Ordering::Relaxed);
                         let _ = handle.emit("wallpaper-covered", covered);
                     }
                     // Asking Explorer for every icon's position is the costly part, so do it often
