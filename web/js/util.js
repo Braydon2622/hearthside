@@ -22,6 +22,12 @@ window.HS = {
     };
   };
 
+  // Size of the picture in CSS pixels: the window, unless ?size=WxH pins it (used by the
+  // screenshot tool, because headless browsers change the window size just before capturing).
+  const pinned = /^(\d+)x(\d+)$/.exec(new URLSearchParams(location.search).get('size') || '');
+  HS.viewW = () => (pinned ? +pinned[1] : window.innerWidth);
+  HS.viewH = () => (pinned ? +pinned[2] : window.innerHeight);
+
   HS.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   HS.lerp = (a, b, t) => a + (b - a) * t;
   HS.smooth = (a, b, v) => { const t = HS.clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };

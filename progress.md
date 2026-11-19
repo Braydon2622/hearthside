@@ -19,7 +19,11 @@ is on, `HEARTHSIDE_NO_PAUSE`, two 30 s runs): **13.3 to 14.4 % of one core, abou
 fourth full-screen layer to composite) and whatever else this laptop is doing. The 10 % budget therefore needs
 the renderer work planned for milestone 2, not just "no worse than before".
 
-Screenshots: `docs/milestones/00-before-*.png`.
+Screenshots: `docs/milestones/00-before-*.png`. These were re-taken during milestone 2 from the original `web/`
+(exported from commit 48393f9, served on a second port with a small injected shim for size, time and a seeded
+Fill), because headless Edge starts the page smaller than the window and then captures the full window without
+a resize, which stretched the canvas against the icons. `tools/shoot.ps1` now pins the page size with `?size=WxH`.
+The `01-field-*` shots were taken before that fix and are slightly stretched (about 9 % vertically at 1920x1080).
 
 ## Milestone 1: field engine (done)
 
@@ -52,4 +56,35 @@ Checked: browser screenshots `01-field-*`; a drag in the browser (clearing shrin
 path open around the drop, trees tuck away along the ripple); Fill desktop gives a district with lots and lanes;
 real desktop captured once (kept out of the repo).
 
-Next: milestone 2, painterly ground and edges, and one WebGL2 renderer for the whole scene.
+## Milestone 2: painterly ground and edges, one renderer (done)
+
+- **One WebGL2 canvas** (`web/js/render.js`) replaces the four stacked canvases. Per frame: the cached ground picture
+  is blitted in, every standing thing is drawn as instanced quads from one sprite atlas (one draw call), a
+  finishing pass adds cloud shadows and the time of day, and night lights are added on top. Cloud shadows (and
+  later the grade) therefore cover sprites and villagers too, not just the ground. The CPU-side per-sprite tint
+  copies in `sprites.js` are gone (the tint is a uniform). Villagers, cats, smoke and birds became atlas sprites
+  (code-drawn stand-ins are kept for villagers and cats in case the painted ones fail to load).
+- **Ground shader** (still painted off-screen, only while the field morphs): the painted grass, dirt and lawn tiles,
+  broken up by brush-stroke noise (stretched noise whose direction drifts across the screen) in a warm and a cool
+  layer, plus two grass hues drifting at large scale. The cobble tile is mirrored when repeated, which read as a
+  kaleidoscope at plaza size, so plazas are now painted Voronoi cobbles (warm mid-tones, lit from the top-left,
+  blue-grey gaps) with the cobble tile only lending its brushwork; cobbles go quieter right under icons.
+- **Painted rim**: a crisp edge (under 1 px of anti-aliasing, no soft fade) with a brushy wobble, a darker richer
+  grass lip outside it, a cool shadow on the plaza floor under the lip on the light side (sampled 5 and 11 px
+  toward the light), a faintly lit inner wall on the far side, and a slight darkening all round the inner edge.
+  District lots read as raised beds with a dark kerb toward the lanes.
+- **Cloud shadows**: a seamless 256x256 noise texture built at start-up, two layers drifting at different speeds,
+  darkening and cooling whatever is under them.
+- **Frame loop**: the loop now runs on a timer at 20 fps (30 while rearranging) instead of requestAnimationFrame
+  with skipped frames. With rAF the browser's 60 Hz frame machinery stays awake for the skipped frames too; the
+  switch alone took the real app from about 12 % to 9 %.
+
+Measured (real app, same conditions as the baseline): rAF loop 11.6 to 12.7 %; timer loop **7.9 to 9.0 % of one
+core, 443 to 445 MB** animating; **0.8 %** while covered. Memory is about 15 MB above the baseline's 430 MB; to be
+revisited (the two full-screen off-screen pictures are 16 MB; the old four canvases cost about the same, so this
+needs a careful A/B at the end rather than a guess).
+
+Checked: `02-ground-*` screenshots; the rim and inner shadow at 1:1 crops; drag and morph still fine; night lights
+and the district render through the new pipeline.
+
+Next: milestone 3, unified lighting (engine shadows, sprites without baked shadows) and the colour grade.

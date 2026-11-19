@@ -156,14 +156,66 @@
 
   // Soft round light used for windows and lanterns at night.
   function glowSprite() {
-    const c = document.createElement('canvas'); c.width = c.height = 128;
-    const g = c.getContext('2d');
-    const gr = g.createRadialGradient(64, 64, 2, 64, 64, 64);
-    gr.addColorStop(0, 'rgba(255,214,140,.85)');
-    gr.addColorStop(0.35, 'rgba(255,170,80,.28)');
-    gr.addColorStop(1, 'rgba(255,150,60,0)');
-    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
-    return c;
+    return make(64, 64, 32, 32, (g) => {
+      const gr = g.createRadialGradient(32, 32, 1, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,214,140,.85)');
+      gr.addColorStop(0.35, 'rgba(255,170,80,.28)');
+      gr.addColorStop(1, 'rgba(255,150,60,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    });
+  }
+  // Small helpers drawn by code: a plain white square (tinted when used), a soft puff of
+  // smoke, a soft dark blob for shadows under walkers, and a bird seen from above.
+  function whiteSprite() { return make(4, 4, 0, 0, (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, 4, 4); }); }
+  function puffSprite() {
+    return make(16, 16, 8, 8, (g) => {
+      const gr = g.createRadialGradient(8, 8, 0.5, 8, 8, 8);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 16, 16);
+    });
+  }
+  function blobSprite() {
+    return make(24, 10, 12, 5, (g) => {
+      g.scale(1, 10 / 24);
+      const gr = g.createRadialGradient(12, 12, 1, 12, 12, 12);
+      gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.6, 'rgba(0,0,0,.7)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 24, 24);
+    });
+  }
+  function birdSprite() {
+    return make(18, 8, 9, 6, (g) => {
+      g.strokeStyle = '#fff'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(2, 2); g.quadraticCurveTo(6, 2, 9, 6); g.quadraticCurveTo(12, 2, 16, 2); g.stroke();
+    });
+  }
+
+  // Code-drawn stand-ins for villagers and cats, used until (or if) the painted ones load.
+  function personSprite(tunic, hair, skin, hat) {
+    return make(18, 30, 9, 28, (g) => {
+      const x = 9, y = 28;
+      g.strokeStyle = '#4a3a30'; g.lineWidth = 2.2;
+      g.beginPath(); g.moveTo(x - 2, y - 6); g.lineTo(x - 2, y); g.moveTo(x + 2, y - 6); g.lineTo(x + 2, y); g.stroke();
+      g.fillStyle = tunic; g.beginPath(); g.roundRect(x - 4.8, y - 17, 9.6, 12, 3.5); g.fill();
+      g.fillStyle = skin; g.beginPath(); g.arc(x, y - 21, 4.6, 0, 7); g.fill();
+      if (hat) {
+        g.fillStyle = '#e3c779';
+        g.beginPath(); g.ellipse(x, y - 23.5, 7.5, 2.4, 0, 0, 7); g.fill();
+        g.beginPath(); g.arc(x, y - 24.5, 3.6, Math.PI, 0); g.fill();
+      } else { g.fillStyle = hair; g.beginPath(); g.arc(x, y - 22, 4.7, Math.PI * 0.95, Math.PI * 2.05); g.fill(); }
+    });
+  }
+  function catSprite(fur) {
+    return make(24, 18, 12, 16, (g) => {
+      const x = 12, y = 16;
+      g.strokeStyle = fur; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(x - 5, y - 5); g.quadraticCurveTo(x - 10, y - 8, x - 9, y - 12); g.stroke();
+      g.beginPath(); g.moveTo(x - 3, y - 3); g.lineTo(x - 3, y); g.moveTo(x + 3, y - 3); g.lineTo(x + 3, y); g.stroke();
+      g.fillStyle = fur;
+      g.beginPath(); g.ellipse(x, y - 5, 6, 3.4, 0, 0, 7); g.fill();
+      g.beginPath(); g.arc(x + 5.5, y - 8, 3.2, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(x + 3.5, y - 10); g.lineTo(x + 4, y - 13.5); g.lineTo(x + 5.8, y - 10.5);
+      g.moveTo(x + 6, y - 10.5); g.lineTo(x + 7.8, y - 13.5); g.lineTo(x + 8, y - 9.5); g.fill();
+    });
   }
 
   HS.buildSprites = function () {
@@ -177,7 +229,12 @@
     const roofs = [['#c0563f', '#8e3b2b'], ['#3f7f86', '#2b5a60'], ['#6d6f9c', '#4b4d73'], ['#c98a3b', '#93622a']];
     const walls = ['#f1e6cc', '#ead9bd', '#f4ecdc'];
 
-    const s = { house: [], tree: [], blossom: [], pine: [], bush: [], flowerbed: [], lantern: lantern(), glow: glowSprite() };
+    const s = { house: [], tree: [], blossom: [], pine: [], bush: [], flowerbed: [], lantern: lantern(), glow: glowSprite(),
+      white: whiteSprite(), puff: puffSprite(), blob: blobSprite(), bird: birdSprite() };
+    const tunics = ['#c4553f', '#3f7f86', '#d9a441', '#6d6f9c', '#7a9a4a', '#b5657c', '#e6e0d0', '#4f6fa8'];
+    const hair = ['#3a2a20', '#6b4a2b', '#1f1b1a', '#a9652f', '#d8d2c4'], skin = ['#f1cfa8', '#e0b48a', '#c99772'];
+    s.villager = tunics.map((t, i) => personSprite(t, hair[i % hair.length], skin[i % skin.length], i % 3 === 1));
+    s.cat = ['#3a3532', '#d98b3a', '#e9e4da'].map(catSprite);
     // houses come in two widths: 3 cells and 4 cells
     for (const cells of [3, 4]) {
       for (let i = 0; i < roofs.length; i++) {
@@ -196,49 +253,20 @@
     return s;
   };
 
-  // --- time-of-day tint ---------------------------------------------------------
-  // Instead of laying a coloured sheet over the whole screen every frame (expensive), the
-  // tint is baked in: each sprite keeps a pre-tinted copy, and plain colours go through HS.tc.
-  HS.tint = [1, 1, 1];
-  const colorCache = new Map();
-  let allSprites = [];
-
-  HS.setTint = function (rgb) {
-    HS.tint = rgb; colorCache.clear();
-    const neutral = rgb[0] === 1 && rgb[1] === 1 && rgb[2] === 1;
-    const css = 'rgb(' + rgb.map((v) => Math.round(v * 255)).join(',') + ')';
-    for (const sp of allSprites) {
-      if (neutral) { sp.tinted = null; continue; }
-      const c = sp.tinted || (sp.tinted = document.createElement('canvas'));
-      c.width = sp.canvas.width; c.height = sp.canvas.height;
-      const g = c.getContext('2d');
-      g.globalCompositeOperation = 'source-over'; g.drawImage(sp.canvas, 0, 0);
-      g.globalCompositeOperation = 'multiply'; g.fillStyle = css; g.fillRect(0, 0, c.width, c.height);
-      g.globalCompositeOperation = 'destination-in'; g.drawImage(sp.canvas, 0, 0);   // keep the original outline
-    }
-  };
-
-  // A '#rrggbb' colour with the current tint applied.
-  HS.tc = function (hex) {
-    let out = colorCache.get(hex);
-    if (!out) {
-      const n = parseInt(hex.slice(1), 16), t = HS.tint;
-      out = 'rgb(' + Math.round(((n >> 16) & 255) * t[0]) + ',' + Math.round(((n >> 8) & 255) * t[1]) + ',' + Math.round((n & 255) * t[2]) + ')';
-      colorCache.set(hex, out);
+  // Every sprite in the set, for packing into the renderer's sprite sheet.
+  HS.allSprites = function (s) {
+    const out = [];
+    for (const k of Object.keys(s)) {
+      if (Array.isArray(s[k])) out.push(...s[k]);
+      else if (s[k] && s[k].canvas) out.push(s[k]);
     }
     return out;
   };
-
-  function register(s) {
-    allSprites = [s.lantern];
-    for (const k of Object.keys(s)) if (Array.isArray(s[k])) allSprites.push(...s[k]);
-  }
   const build = HS.buildSprites;
   HS.buildSprites = function () {
     const s = build();
-    s.decor = []; s.villager = []; s.cat = [];   // these exist only as painted art
+    s.decor = [];   // these exist only as painted art
     HS.sprites = s;
-    register(s);
     return s;
   };
 
@@ -296,12 +324,6 @@
           if (kind === 'lantern') s.lantern = ok[0]; else s[kind] = ok;
         });
     });
-    return Promise.all(jobs).then(() => { register(s); return s; });
-  };
-
-  // Stamp a sprite with its "foot" at (x, y). scale shrinks it toward the foot,
-  // which is how buildings and trees tuck away and grow back.
-  HS.drawSprite = function (g, sp, x, y, scale) {
-    g.drawImage(sp.tinted || sp.canvas, x - sp.ax * scale, y - sp.ay * scale, sp.w * scale, sp.h * scale);
+    return Promise.all(jobs).then(() => s);
   };
 })(window.HS);

@@ -27,8 +27,8 @@
   const P = HS.Icons.prototype;
 
   P.measure = function () {
-    this.cols = Math.max(2, Math.floor((window.innerWidth - HS.ICON_MX * 2) / HS.ICON_W));
-    this.rows = Math.max(2, Math.floor((window.innerHeight - HS.TASKBAR - HS.ICON_MY * 2) / HS.ICON_H));
+    this.cols = Math.max(2, Math.floor((HS.viewW() - HS.ICON_MX * 2) / HS.ICON_W));
+    this.rows = Math.max(2, Math.floor((HS.viewH() - HS.TASKBAR - HS.ICON_MY * 2) / HS.ICON_H));
   };
 
   P.defaults = function () {

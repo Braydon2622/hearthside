@@ -122,55 +122,18 @@
     }
   };
 
-  HS.drawVillager = function (g, v) {
+  // Add a villager to a sprite batch. There is one picture per villager, so walking is shown by
+  // bobbing and rocking it from side to side, and mirroring it to face the other way.
+  HS.drawVillager = function (batch, v) {
     const walking = v.state === 'walk' && v.hop <= 0;
     const lift = v.hop > 0 ? Math.abs(Math.sin(v.hop * 10)) * 7 : 0;
-    const x = v.x, y = v.y - lift;
-    g.fillStyle = 'rgba(30,45,30,.25)';
-    g.beginPath(); g.ellipse(v.x, v.y + 1, v.kind === 'cat' ? 6 : 5.5, 2.3, 0, 0, 7); g.fill();
-
-    // Painted figure, if the art has loaded. There is one picture per villager, so walking is
-    // shown by bobbing and rocking it from side to side, and mirroring it to face the other way.
-    const set = HS.sprites && (v.kind === 'cat' ? HS.sprites.cat : HS.sprites.villager);
-    if (set && set.length) {
-      const sp = set[v.spi % set.length];
-      const bob = walking ? Math.abs(Math.sin(v.phase)) * 1.5 : 0;
-      const tilt = walking ? Math.sin(v.phase) * 0.09 : Math.sin(v.look * 0.7) * 0.025;
-      g.save(); g.translate(x, y - bob); g.scale(v.face, 1); g.rotate(tilt);
-      g.drawImage(sp.tinted || sp.canvas, -sp.ax, -sp.ay, sp.w, sp.h);
-      g.restore();
-      return;
-    }
-
-    if (v.kind === 'cat') {
-      const f = v.face, run = walking ? Math.sin(v.phase) * 2 : 0;
-      g.strokeStyle = HS.tc(v.fur); g.lineWidth = 2; g.lineCap = 'round';
-      g.beginPath(); g.moveTo(x - 5 * f, y - 5); g.quadraticCurveTo(x - 10 * f, y - 8, x - 9 * f, y - 12 + Math.sin(v.look * 2) * 1.5); g.stroke(); // tail
-      g.beginPath(); g.moveTo(x - 3, y - 3); g.lineTo(x - 3 + run, y); g.moveTo(x + 3, y - 3); g.lineTo(x + 3 - run, y); g.stroke();
-      g.fillStyle = HS.tc(v.fur);
-      g.beginPath(); g.ellipse(x, y - 5, 6, 3.4, 0, 0, 7); g.fill();
-      g.beginPath(); g.arc(x + 5.5 * f, y - 8, 3.2, 0, 7); g.fill();
-      g.beginPath(); g.moveTo(x + 3.5 * f, y - 10); g.lineTo(x + 4 * f, y - 13.5); g.lineTo(x + 5.8 * f, y - 10.5);
-      g.moveTo(x + 6 * f, y - 10.5); g.lineTo(x + 7.8 * f, y - 13.5); g.lineTo(x + 8 * f, y - 9.5); g.fill();
-      return;
-    }
-
-    const bob = walking ? Math.abs(Math.sin(v.phase)) * 1.4 : 0;
-    const swing = walking ? Math.sin(v.phase) * 2.6 : 0;
-    const turn = walking ? v.face * 0.8 : Math.sin(v.look * 0.7) * 1.2;   // idle villagers look around
-    g.strokeStyle = HS.tc('#4a3a30'); g.lineWidth = 2.2; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(x - 2, y - 6); g.lineTo(x - 2 + swing, y); g.moveTo(x + 2, y - 6); g.lineTo(x + 2 - swing, y); g.stroke();
-    g.fillStyle = HS.tc(v.tunic);
-    g.beginPath(); g.roundRect(x - 4.8, y - 17 - bob, 9.6, 12, 3.5); g.fill();
-    g.fillStyle = HS.tc(v.skin);
-    g.beginPath(); g.arc(x + turn * 0.5, y - 21 - bob, 4.6, 0, 7); g.fill();
-    if (v.hat) {
-      g.fillStyle = HS.tc('#e3c779');
-      g.beginPath(); g.ellipse(x + turn * 0.5, y - 23.5 - bob, 7.5, 2.4, 0, 0, 7); g.fill();
-      g.beginPath(); g.arc(x + turn * 0.5, y - 24.5 - bob, 3.6, Math.PI, 0); g.fill();
-    } else {
-      g.fillStyle = HS.tc(v.hair);
-      g.beginPath(); g.arc(x + turn * 0.5 - turn * 0.6, y - 22 - bob, 4.7, Math.PI * 0.95, Math.PI * 2.05); g.fill();
-    }
+    const s = HS.sprites, cat = v.kind === 'cat';
+    batch.add(s.blob, v.x, v.y + 1, cat ? 0.5 : 0.46, 0.46, false, 1, 1, 1, 0.24, 0, 0, 0);   // shadow on the ground
+    const set = cat ? s.cat : s.villager;
+    if (!set || !set.length) return;
+    const sp = set[v.spi % set.length];
+    const bob = walking ? Math.abs(Math.sin(v.phase)) * 1.5 : 0;
+    const tilt = walking ? Math.sin(v.phase) * 0.09 : Math.sin(v.look * 0.7) * 0.025;
+    batch.add(sp, v.x, v.y - lift - bob, 1, 1, v.face < 0, 1, 1, 1, 1, tilt * (v.face < 0 ? -1 : 1), 0, 0);
   };
 })(window.HS);
