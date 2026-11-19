@@ -26,9 +26,11 @@
     const W = this.W = Math.ceil(width / CS), H = this.H = Math.ceil(height / CS), N = W * H;
     this.width = width; this.height = height;
     this.village = new Float32Array(N);
-    this.plaza = new Float32Array(N);  this.plazaT = new Float32Array(N);
-    this.path = new Float32Array(N);   this.pathT = new Float32Array(N);
-    this.delay = new Float32Array(N);
+    // Per-cell summaries of the land field, for walking and placing things (0..1, >0.5 = yes).
+    this.plazaT = new Float32Array(N);   // open ground around icons
+    this.pathT = new Float32Array(N);    // paths between icon groups
+    this.distT = new Float32Array(N);    // district blocks
+    this.field = new HS.Field(width, height);
     this.blocked = new Uint8Array(N);
     this.objAt = new Int32Array(N).fill(-1);
     this.wobble = new Float32Array(N);
@@ -37,7 +39,6 @@
     this.lanterns = new Map();
     this.clusters = [];
     // "Districts": big solid blocks of icons, which get lanes and lawns instead of one huge plaza.
-    this.dist = new Float32Array(N);   this.distT = new Float32Array(N);   // how much each cell is district
     this.lane = new Uint8Array(N);     // 1 where a district lane runs (where villagers walk)
     this.props = new Map();            // houses in empty slots, small things in the gaps between icons
     this.grid = { ox: 0, oy: 0, cw: HS.ICON_W, ch: HS.ICON_H };   // the icon grid, for drawing lanes
@@ -58,6 +59,13 @@
       this.village[idx(x, y)] = HS.clamp(0.5 + e * 2.5, 0, 1);
       this.wobble[idx(x, y)] = HS.noise(x / 3.1 + 3, y / 3.1 + 8);
     }
+    // the field carries the village amount too, smoothly interpolated, for the ground shader
+    this.field.setVillage((px, py) => {
+      const fx = HS.clamp(px / CS - 0.5, 0, W - 1), fy = HS.clamp(py / CS - 0.5, 0, H - 1);
+      const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(W - 1, x0 + 1), y1 = Math.min(H - 1, y0 + 1), tx = fx - x0, ty = fy - y0;
+      const v = this.village;
+      return HS.lerp(HS.lerp(v[idx(x0, y0)], v[idx(x1, y0)], tx), HS.lerp(v[idx(x0, y1)], v[idx(x1, y1)], tx), ty);
+    });
 
     const add = (o) => {
       o.target = 1; o.scale = 1; o.delay = 0; o.phase = rand() * 6.28; o.id = this.objects.length;
@@ -115,6 +123,20 @@
   };
 
   const P = HS.World.prototype;
+
+  // Round off the corners of a route through grid cells, so paths curve instead of zig-zagging.
+  function smoothLine(pts) {
+    for (let it = 0; it < 3 && pts.length > 2; it++) {
+      const out = [pts[0]];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+      }
+      out.push(pts[pts.length - 1]);
+      pts = out;
+    }
+    return pts;
+  }
 
   P.cellOf = function (px, py) {
     return HS.clamp(Math.floor(py / CS), 0, this.H - 1) * this.W + HS.clamp(Math.floor(px / CS), 0, this.W - 1);
@@ -233,9 +255,7 @@
   // drop = where the user let go (so the change ripples outward from there), or null to apply instantly.
   P.update = function (icons, drop) {
     const W = this.W, H = this.H, N = W * H;
-    const oldPlaza = this.plazaT.slice(), oldPath = this.pathT.slice();
-    const plazaT = this.plazaT, pathT = this.pathT;
-    const oldDist = this.distT.slice(), distT = this.distT;
+    const plazaT = this.plazaT, pathT = this.pathT, distT = this.distT;
     plazaT.fill(0); pathT.fill(0); distT.fill(0);
 
     // 0. big solid blocks of icons become districts; their empty slots count as open ground too
@@ -243,7 +263,8 @@
     if (dz) this.grid = { ox: dz.ox, oy: dz.oy, cw: dz.cw, ch: dz.ch };
     const solid = dz ? icons.concat(dz.lots) : icons;
 
-    // 1. open ground under and around every icon
+    // 1. rough open ground under and around every icon, cell by cell. This is only used to plan
+    //    the paths; the real outline comes from the land field further down.
     const reach = PLAZA_PAD + CS * 1.6;
     const stamp = (field, rects) => {
       for (const r of rects) {
@@ -257,7 +278,6 @@
       }
     };
     stamp(plazaT, solid);
-    if (dz) stamp(distT, dz.rects.concat(dz.lots));
 
     // 2. anything that would stand on or in front of an icon tucks away
     const want = new Uint8Array(this.objects.length).fill(1);
@@ -314,10 +334,11 @@
       if (o >= 0 && want[o]) k += objects[o].kind === 'house' ? 9 : village[c] < 0.45 ? 0.5 : 1.5;
       return k;
     };
-    const lanternSpots = new Map();
+    const lanternSpots = new Map(), lines = [];
     for (const e of edges) {
       const cells = this.route(cl[e.a].cell, cl[e.b].cell, pathCost, false);
       if (!cells) continue;
+      lines.push(smoothLine(cells.map((c) => this.cellCenter(c))));
       let since = 3;
       for (const c of cells) {
         onPath[c] = 1;
@@ -341,15 +362,24 @@
       for (const n of [c - 1, c + 1]) { const t = n >= 0 && n < N ? objAt[n] : -1; if (t >= 0 && objects[t].kind !== 'house') want[t] = 0; }
     }
 
-    // 5. apply, with the change rippling out from where the icon was dropped
-    const wave = (px, py) => (drop ? Math.min(0.9, Math.hypot(px - drop.x, py - drop.y) / 900) : 0);
+    // 5. the land field: icons, empty district slots and paths, all as one outline
+    const field = this.field;
+    field.update(icons, dz ? dz.lots : [], lines, dz ? dz.rects.concat(dz.lots) : null, drop);
     for (let c = 0; c < N; c++) {
-      if (!drop) { this.plaza[c] = plazaT[c]; this.path[c] = pathT[c]; this.delay[c] = 0; }
-      else if (Math.abs(plazaT[c] - oldPlaza[c]) > 0.05 || Math.abs(pathT[c] - oldPath[c]) > 0.05 || Math.abs(distT[c] - oldDist[c]) > 0.05) {
-        this.delay[c] = wave((c % W + 0.5) * CS, (Math.floor(c / W) + 0.5) * CS);
-      }
-      if (!drop) this.dist[c] = distT[c];
+      const p = this.cellCenter(c);
+      const s = field.at(p.x, p.y, 0), near = field.at(p.x, p.y, 1), d = field.at(p.x, p.y, 2);
+      plazaT[c] = near < 44 ? HS.clamp(0.5 - s / 24, 0, 1) : 0;
+      distT[c] = HS.clamp(0.5 - d / 24, 0, 1);
     }
+    // anything whose foot stands in the clearing makes way
+    for (const o of this.objects) {
+      if (!want[o.id]) continue;
+      const hw = o.sp.w * 0.28;
+      if (field.at(o.x - hw, o.y - 4, 0) < 5 || field.at(o.x, o.y - 4, 0) < 5 || field.at(o.x + hw, o.y - 4, 0) < 5) want[o.id] = 0;
+    }
+
+    // 6. apply, with the change rippling out from where the icon was dropped
+    const wave = (px, py) => HS.rippleDelay(drop, px, py);
     this.blocked.fill(0);
     for (const o of objects) {
       const t = want[o.id];
@@ -358,7 +388,7 @@
       if (t && o.blocking) for (const c of o.cells) this.blocked[c] = 1;
     }
 
-    // 6. district furnishings: a house or tree in each empty slot, and small things in the gaps
+    // 7. district furnishings: a house or tree in each empty slot, and small things in the gaps
     //    between side-by-side icons (which are the only places nothing covers on a full desktop)
     const wanted = new Map(), freeGaps = [];
     if (dz) {
@@ -422,21 +452,15 @@
       }
     }
     for (const f of freeGaps) { const c = this.cellOf(f.x, f.y); if (!this.blocked[c]) this.spots.push({ cell: c, x: f.x, y: f.y, loose: false }); }
-    this.dirty = true; this.groundSettled = false;
+    this.dirty = true;
     this.version++;
   };
 
-  // Advance the animations: ground spreading, things shrinking and growing back.
+  // Advance the animations: ground morphing, things shrinking and growing back.
   P.step = function (dt) {
-    const N = this.W * this.H, k = 1 - Math.exp(-dt * 7);
-    let moving = false;
-    for (let c = 0; c < N && !this.groundSettled; c++) {
-      const dp = this.plazaT[c] - this.plaza[c], dq = this.pathT[c] - this.path[c], dd = this.distT[c] - this.dist[c];
-      if (Math.abs(dp) < 0.004 && Math.abs(dq) < 0.004 && Math.abs(dd) < 0.004) continue;
-      moving = true;
-      if (this.delay[c] > 0) { this.delay[c] -= dt; continue; }
-      this.plaza[c] += dp * k; this.path[c] += dq * k; this.dist[c] += dd * k;
-    }
+    // the ground morph itself runs on the graphics card; it only needs the clock
+    this.field.step(dt);
+    if (this.field.morphing) this.dirty = true;
     // "animating" tells the drawing code whether the still scenery needs repainting this frame
     let anim = false;
     for (const o of this.objects) if (o.scale !== o.target) { anim = true; break; }
@@ -449,7 +473,6 @@
       p.scale += (p.target - p.scale) * (1 - Math.exp(-dt * (p.target ? 5 : 12)));
       if (Math.abs(p.target - p.scale) < 0.01) { p.scale = p.target; if (!p.target) this.props.delete(key); }
     }
-    if (moving) this.dirty = true; else this.groundSettled = true;   // nothing left to animate until the next update
     for (const o of this.objects) {
       if (o.scale === o.target) continue;
       if (o.delay > 0) { o.delay -= dt; continue; }

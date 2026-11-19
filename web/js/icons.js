@@ -130,9 +130,10 @@
   };
 
   // Test helper: crowd the desktop the way a really full one looks, leaving a few empty slots.
-  P.fill = function () {
+  P.fill = function (rand) {
+    rand = rand || Math.random;
     for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
-      if (this.taken(c, r) || Math.random() < 0.06) continue;
+      if (this.taken(c, r) || rand() < 0.06) continue;
       const n = NAMES[this.items.length % NAMES.length];
       this.place(this.create(n[0], n[1], c, r));
     }

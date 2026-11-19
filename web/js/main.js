@@ -202,7 +202,7 @@
     requestAnimationFrame(frame);
     // 30 frames a second while the village is rearranging, 20 the rest of the time
     // (villagers only stroll, and the lower rate saves about a third of the work).
-    if (now - last < (spritesDirty || world.animating || !world.groundSettled ? 31 : 48)) return;
+    if (now - last < (spritesDirty || world.animating || world.field.morphing ? 31 : 48)) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     tick(dt);
@@ -243,6 +243,14 @@
     window.__TAURI__.core.invoke('get_covered').then((c) => setPaused(!!c)).catch(() => {});
   }
 
+  // Test and screenshot helpers: ?hour=18.5 fixes the time, ?fill=1 crowds the desktop the same
+  // way every time, ?clean=1 hides the control panel.
+  const Q = new URLSearchParams(location.search);
+  if (!NATIVE) {
+    if (Q.has('hour')) { $('liveClock').checked = false; $('timeSlider').value = Q.get('hour'); }
+    if (Q.has('clean')) $('panel').style.display = 'none';
+  }
+
   $('timeSlider').addEventListener('input', () => { $('liveClock').checked = false; });
   $('addIcon').addEventListener('click', () => icons.add());
   $('removeIcon').addEventListener('click', () => icons.removeLast());
@@ -253,6 +261,7 @@
 
   // Start with the code-drawn placeholders, then swap in the painted art as soon as it has loaded.
   build();
+  if (!NATIVE && Q.has('fill')) icons.fill(HS.rng(5));
   requestAnimationFrame(frame);
   HS.loadArt(sprites).then(() => { tintKey = ''; build(); });
   ground.loadTextures(() => { if (world) { world.dirty = true; if (paused) tick(0); } });
