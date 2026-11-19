@@ -3,13 +3,14 @@
 // When real painted art exists, these canvases get swapped for image files and
 // nothing else in the program has to change.
 (function (HS) {
-  const S = 2; // sprites are drawn at double size so they stay crisp
+  const S = 2; // code-drawn sprites are drawn at double size so they stay crisp
 
-  function make(w, h, ax, ay, paint) {
+  function make(w, h, ax, ay, paint, s) {
+    s = s || S;
     const c = document.createElement('canvas');
-    c.width = Math.ceil(w * S); c.height = Math.ceil(h * S);
+    c.width = Math.ceil(w * s); c.height = Math.ceil(h * s);
     const g = c.getContext('2d');
-    g.scale(S, S);
+    g.scale(s, s);
     g.lineJoin = 'round'; g.lineCap = 'round';
     const extra = paint(g) || {};
     return Object.assign({ canvas: c, w, h, ax, ay }, extra);
@@ -286,7 +287,7 @@
     const sp = make(w, h, w / 2, ih * 0.97, (g) => {
       g.imageSmoothingQuality = 'high';
       g.drawImage(img, pad, 0, iw, ih);
-    });
+    }, 1.4);   // painted art is kept at 1.4x its size on screen: crisp enough, and half the memory of 2x
     if (kind === 'house') {
       sp.windows = [];                                           // window positions are not known for painted houses...
       sp.glowAt = { x: 0, y: -ih * 0.07, size: iw * 0.95 };      // ...so at night the thin front wall glows as a whole

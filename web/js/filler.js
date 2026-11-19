@@ -201,7 +201,7 @@
       if (p && p.dir >= 0 && p.sp === n.sp) continue;
       n.dir = drop ? 1 : 0;
       n.start = now + (drop ? HS.rippleDelay(drop, n.x, n.y) + 0.35 + HS.hash2(Math.round(n.x), Math.round(n.y)) * 0.5 : 0);
-      n.phase = HS.hash2(Math.round(n.y), Math.round(n.x)) * 6.28;
+      n.phase = n.x * 0.011 + n.y * 0.005;   // the same rolling gust as the big trees
       pieces.set(k, n);
     }
     this.cleanAt = drop ? now + 2.6 : Infinity;

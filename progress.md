@@ -174,4 +174,51 @@ reduction: 5.8 to 17.7 % (mean about 10.8 %).
 
 Checked: `05-density-*` screenshots, 1.6x crops, a drag in the browser.
 
-Next: milestone 6, life.
+## Milestone 6: life (done)
+
+- **Smooth walking**: a route of cells is now turned into a line through the cells' walking points (lane points
+  inside districts), each villager keeping slightly to their own side, rounded off with two passes of corner
+  cutting. Villagers follow it at a constant pace that eases in when they set off and out as they arrive;
+  footfalls (bob and rock) follow the distance actually walked, and facing only flips on a clear sideways move.
+- **Idle actions**: when they stop, people look around, chat (two idle neighbours within 50 px face each other
+  and nod), crouch to tend the flowers, stretch, or give a little hop; cats sit or groom. All are done with the
+  one picture per villager by squashing, tilting and lifting it, and the engine shadow follows.
+- **Wind**: every tree crown (big trees, district trees, gap firs and the code-drawn crowns and bushes) sways in
+  the vertex shader, about 3 % of its width at the top, with a slow gust whose phase rolls across the screen
+  and a quicker flutter on top. Their shadows sway with them. No repaint cost: the frame is redrawn anyway.
+- **Performance and memory work** in this milestone:
+  - the ground copy and the shadow multiply became one pass;
+  - the WebGL context is requested `desynchronized` and `low-power`; this alone took the animating cost from
+    about 9.6 % to about 5.5 %. Checked on the real desktop that frames still reach the screen (two captures
+    3 s apart differ in 6.6 % of sampled pixels: sway, clouds, walkers);
+  - painted sprites are stored at 1.4x their on-screen size instead of 2x (atlas 2048x1096 down to 2048x572),
+    the shadow picture is single-channel, the per-sprite canvases are released once the final atlas is on the
+    card, and the frame loop no longer allocates objects per lantern and villager.
+
+Measured (real app, same conditions as the baseline, 30 s runs):
+
+| | CPU, animating | Memory, animating | CPU, covered | Memory, covered |
+| --- | --- | --- | --- | --- |
+| Baseline (original `web/`, rebuilt today) | 14.9 to 16.2 % | 430 to 431 MB | 0.5 to 0.6 % | 452 MB |
+| Milestone 6 (final) | **4.9 to 8.1 %** | **433 to 436 MB** | **0.1 to 0.4 %** | **452 to 454 MB** |
+
+CPU is well inside the 10 % / 3 % budget. Memory is the same as the baseline while covered and about 3 to 5 MB
+(about 1 %) above it while animating, which is within run-to-run noise but not provably "no worse"; it has
+been cut by about 15 MB from its peak during this work.
+
+Checked: `06-life-*` screenshots (all four states, both sizes); villager positions sampled in the browser
+(smooth curves, eased stops, idle actions cycling); real desktop captured (kept out of the repo).
+
+## Summary and what is left
+
+All six milestones are in; milestone 4 is incomplete for lack of image credits:
+- not generated: the villager sheet and the two-animal sheet (Figma AI credits ran out, resets 2026-11-20
+  00:00 UTC). Villagers and cats still use the first-generation side-view art, now on the shared palette. This is
+  the most visible remaining mismatch with the camera spec.
+- worth regenerating when credits return: props at a steeper angle without dark outlines.
+
+Things I could not verify fully:
+- the real desktop was checked by `PrintWindow` captures (tools/deskshot.ps1), not by eye on the monitor;
+  with the desynchronized canvas, an on-screen look is worth one glance;
+- performance was measured at night-time real clock on this laptop only, with other apps running;
+- the browser drag test ran in the in-app browser at 1024x768, not at 1920x1080.

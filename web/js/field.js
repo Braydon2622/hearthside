@@ -64,7 +64,7 @@
     this.old = new Float32Array(n * 4);
     this.next = new Float32Array(n * 4);
     this.sum = new Float32Array(n);
-    this.a = new Float64Array(n); this.b = new Float64Array(n); this.tmp = {};
+    this.a = new Float32Array(n); this.b = new Float32Array(n); this.tmp = {};
     this.drop = null;
     this.t = 1e9;            // seconds since the last change
     this.version = 0;

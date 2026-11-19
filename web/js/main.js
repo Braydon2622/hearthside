@@ -86,20 +86,23 @@
   // --- filling the frame --------------------------------------------------------
   // Everything standing, in depth order: lower on screen = drawn later = in front.
   // world.objects is already sorted by y; props, lanterns and villagers are sorted and merged in.
-  const extra = [];
+  const extra = [], byY = (a, c) => a.y - c.y;
+  // tree crowns sway in the wind: about 3 % of their width at the top, the phase rolling across the screen
+  const sway = (e) => (e.sway ? e.sp.w * 0.03 * (e.size || 1) : 0), phase = (e) => e.x * 0.011 + e.y * 0.005;
   function fillScene(dt) {
     const b = renderer.scene;
     b.reset();
     extra.length = 0;
-    for (const l of world.lanterns.values()) if (l.scale > 0.02) extra.push({ kind: 'lantern', sp: sprites.lantern, x: l.x, y: l.y, scale: l.scale });
+    // (no new objects per frame: lanterns, props and villagers go into the list as they are)
+    for (const l of world.lanterns.values()) if (l.scale > 0.02) { l.kind = 'lantern'; l.sp = sprites.lantern; extra.push(l); }
     for (const p of world.props.values()) if (p.scale > 0.02) extra.push(p);
-    for (const v of villagers.list) if (v.state !== 'inside') extra.push({ villager: v, y: v.y });
-    extra.sort((a, c) => a.y - c.y);
+    for (const v of villagers.list) if (v.state !== 'inside') extra.push(v);
+    extra.sort(byY);
     let i = 0;
-    const put = (e) => { if (e.villager) HS.drawVillager(b, e.villager); else b.sprite(e.sp, e.x, e.y, e.scale * (e.size || 1), CAST[e.kind] || 6); };
+    const put = (e) => { if (e.kind === 'person' || e.kind === 'cat') HS.drawVillager(b, e); else b.sprite(e.sp, e.x, e.y, e.scale * (e.size || 1), CAST[e.kind] || 6, sway(e), phase(e)); };
     for (const o of world.objects) {
       while (i < extra.length && extra[i].y <= o.y) put(extra[i++]);
-      if (o.scale >= 0.02) b.sprite(o.sp, o.x, o.y, o.scale, CAST[o.kind] || 6);
+      if (o.scale >= 0.02) b.sprite(o.sp, o.x, o.y, o.scale, CAST[o.kind] || 6, sway(o), phase(o));
     }
     while (i < extra.length) put(extra[i++]);
 
@@ -229,6 +232,6 @@
   // Start with the code-drawn placeholders, then swap in the painted art as soon as it has loaded.
   build();
   if (!NATIVE && Q.has('fill')) icons.fill(HS.rng(5));  setTimeout(frame, 0);
-  HS.loadArt(sprites).then(() => { renderer.setSprites(HS.allSprites(sprites)); build(); });
+  HS.loadArt(sprites).then(() => { const all = HS.allSprites(sprites); renderer.setSprites(all); renderer.releaseSprites(all); build(); });
   renderer.ground.loadTextures(() => { renderer.groundDirty = true; if (paused && world) tick(0); });
 })(window.HS);

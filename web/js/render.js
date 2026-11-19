@@ -1,10 +1,11 @@
 // One WebGL2 renderer for the whole picture.
 //
 // Every frame:
-//   1. the ground is copied in from its own off-screen picture (repainted only while it morphs),
-//   2. shadows: every standing thing's own silhouette, blurred and pushed away from the light
+//   1. shadows: every standing thing's own silhouette, blurred and pushed away from the light
 //      (which comes from the top-left) by its height, is gathered into a half-size shadow picture
-//      and laid over the ground in one go, so overlapping shadows never double up,
+//      with "keep the darkest", so overlapping shadows never double up (every second frame),
+//   2. the frame starts as the ground (its own off-screen picture, repainted only while it morphs)
+//      with the shadow picture laid over it, in one pass,
 //   3. every standing thing (buildings, trees, props, villagers, smoke, birds) is drawn on top as
 //      textured rectangles cut from one big sprite sheet ("atlas"), all in a single draw call,
 //   4. a finishing pass over the whole frame: drifting cloud shadows, a soft bloom on the
@@ -32,7 +33,11 @@
     void main() {
       vec2 p = iRect.xy + aCorner * iRect.zw;
       float h = 1.0 - aCorner.y;
-      p.x += (sin(uTime * 1.3 + iMisc.x) * 0.75 + sin(uTime * 2.7 + iMisc.x * 1.9) * 0.25) * iPivot.w * h * h;
+      // wind: a slow gust rolls across the screen (the phase follows position), with a quicker flutter on top
+      float gust = 0.6 + 0.4 * sin(uTime * 0.37 - iMisc.x * 0.6);
+      vec2 sway = vec2(sin(uTime * 1.3 + iMisc.x) * 0.75 + sin(uTime * 2.7 + iMisc.x * 1.9) * 0.25,
+                       sin(uTime * 1.1 + iMisc.x * 1.3) * 0.25) * iPivot.w * gust;
+      p += sway * h * h;
       float c = cos(iPivot.z), s = sin(iPivot.z);
       vec2 d = p - iPivot.xy;
       p = iPivot.xy + vec2(c * d.x - s * d.y, s * d.x + c * d.y);
@@ -63,7 +68,7 @@
     void main() {
       if (uShadow > 0.5) {
         // a lower-detail level of the sprite sheet is a cheap blur of the silhouette
-        float a = texture(uAtlas, vUV, 2.2).a * vColor.a;
+        float a = texture(uAtlas, vUV, 2.5).a * vColor.a;
         o = vec4(a, a, a, a);
         return;
       }
@@ -74,15 +79,16 @@
   const QUAD_VS = `#version 300 es
     layout(location = 0) in vec2 p;
     void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
-  // Lays the shadow picture over the ground: the frame is multiplied by a cool shade.
+  // Starts the frame: the ground with the shadow picture laid over it in a cool shade.
   const SHADE_FS = `#version 300 es
     precision mediump float;
-    uniform sampler2D uShadowTex;
+    uniform sampler2D uShadowTex, uGround;
     uniform vec2 uRes;
     out vec4 o;
     void main() {
-      float s = texture(uShadowTex, gl_FragCoord.xy / uRes).r;
-      o = vec4(mix(vec3(1.0), vec3(0.40, 0.47, 0.66), s * 0.72), 1.0);
+      vec2 uv = gl_FragCoord.xy / uRes;
+      float s = texture(uShadowTex, uv).r;
+      o = vec4(texture(uGround, uv).rgb * mix(vec3(1.0), vec3(0.40, 0.47, 0.66), s * 0.72), 1.0);
     }`;
   // Bloom, step 1: keep only the bright parts of the frame, at a quarter of the size.
   const BRIGHT_FS = `#version 300 es
@@ -184,7 +190,10 @@
   };
 
   HS.Renderer = function (canvas) {
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true });
+    // desynchronized + low-power: a wallpaper does not need the high-performance GPU, and a
+    // desynchronized canvas can be presented with less work by the browser's compositor
+    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true,
+      desynchronized: true, powerPreference: 'low-power' });
     if (!gl) throw new Error('WebGL2 is not available');
     this.gl = gl; this.canvas = canvas;
     const uniforms = (prog, names) => { const u = {}; for (const n of names) u[n] = gl.getUniformLocation(prog, n); return u; };
@@ -230,7 +239,7 @@
 
     // full-screen passes
     const shadeProg = HS.glProgram(gl, QUAD_VS, SHADE_FS), shadeU = uniforms(shadeProg, ['uRes']);
-    gl.useProgram(shadeProg); gl.uniform1i(gl.getUniformLocation(shadeProg, 'uShadowTex'), 11);
+    gl.useProgram(shadeProg); gl.uniform1i(gl.getUniformLocation(shadeProg, 'uShadowTex'), 11); gl.uniform1i(gl.getUniformLocation(shadeProg, 'uGround'), 10);
     const brightProg = HS.glProgram(gl, QUAD_VS, BRIGHT_FS), brightU = uniforms(brightProg, ['uRes', 'uThreshold']);
     gl.useProgram(brightProg); gl.uniform1i(gl.getUniformLocation(brightProg, 'uScene'), 8);
     const blurProg = HS.glProgram(gl, QUAD_VS, BLUR_FS), blurU = uniforms(blurProg, ['uRes', 'uDir', 'uSrc']);
@@ -251,11 +260,11 @@
     // Off-screen pictures. Texture units: 8 frame, 10 ground, 11 shadows, 12 + 13 bloom.
     let W = 0, H = 0;
     const T = this.targets = {};
-    function target(name, unit, w, h, filter) {
+    function target(name, unit, w, h, filter, format) {
       if (T[name]) { gl.deleteTexture(T[name].tex); gl.deleteFramebuffer(T[name].fb); }
       const tex = gl.createTexture();
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, format || gl.RGBA8, w, h);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -271,7 +280,7 @@
       canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
       target('scene', 8, W, H, gl.LINEAR);
       target('ground', 10, W, H, gl.NEAREST);
-      target('shadow', 11, Math.ceil(W / 2), Math.ceil(H / 2), gl.LINEAR);
+      target('shadow', 11, Math.ceil(W / 2), Math.ceil(H / 2), gl.LINEAR, gl.R8);
       target('bloomA', 12, Math.ceil(W / 4), Math.ceil(H / 4), gl.LINEAR);
       target('bloomB', 13, Math.ceil(W / 4), Math.ceil(H / 4), gl.LINEAR);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -310,6 +319,12 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       this.atlasSize = [AW, AH];
+      c.width = c.height = 0;
+    };
+    // Once the final sprite sheet is on the graphics card, the little canvases it was built from are
+    // no longer needed; shrinking them to nothing hands their memory back.
+    this.releaseSprites = function (list) {
+      for (const sp of list) if (sp && sp.canvas && sp.uv) { sp.canvas.width = 0; sp.canvas.height = 0; }
     };
 
     this.scene = new Batch();   // everything standing, in depth order
@@ -356,16 +371,11 @@
         this.ground.draw(world, W, H);
         this.groundDirty = false;
       }
-      // the frame starts as a copy of the ground
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.ground.fb);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, T.scene.fb);
-      gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-
       upload(sceneGpu, this.scene, gl.DYNAMIC_DRAW);
       if (this.fillerDirty) { upload(fillerGpu, this.filler, gl.STATIC_DRAW); this.fillerDirty = false; }
-      // shadows: gathered with "keep the darkest", then multiplied over the ground once
-      gl.enable(gl.BLEND);
+      // shadows: gathered with "keep the darkest" (refreshed every second frame)
       if (doShadows) {
+        gl.enable(gl.BLEND);
         gl.bindFramebuffer(gl.FRAMEBUFFER, T.shadow.fb);
         gl.viewport(0, 0, T.shadow.w, T.shadow.h);
         gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -373,14 +383,15 @@
         drawGpu(fillerGpu, time, true, true);
         drawGpu(sceneGpu, time, true, false);
         gl.blendEquation(gl.FUNC_ADD);
+        gl.disable(gl.BLEND);
       }
+      // the frame starts as the ground with the shadows laid over it, in one pass
       fullscreen(shadeProg, T.scene);
       gl.uniform2f(shadeU.uRes, W, H);
-      gl.blendFunc(gl.DST_COLOR, gl.ZERO);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       // the things themselves
-      gl.viewport(0, 0, W, H);
+      gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       drawGpu(fillerGpu, time, false, true);
       drawGpu(sceneGpu, time, false, false);

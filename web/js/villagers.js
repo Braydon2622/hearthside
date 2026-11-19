@@ -23,7 +23,7 @@
     const p = home ? w.cellCenter(home.door) : spot ? { x: spot.x, y: spot.y } : { x: w.width / 2, y: w.height / 2 };
     const v = {
       kind, home, x: p.x, y: p.y, ox: (r() - 0.5) * 10, oy: (r() - 0.5) * 8,
-      spi: Math.floor(r() * 1000), state: 'idle', timer: r() * 4, path: null, pi: 0, goingHome: false, goal: null, dest: null,
+      spi: Math.floor(r() * 1000), state: 'idle', timer: r() * 4, act: 'look', actT: 0, route: null, ri: 0, goingHome: false, goal: null, dest: null,
       speed: kind === 'cat' ? 46 : 24 + r() * 12, phase: r() * 6, hop: 0, face: 1, look: r() * 6,
       owl: r() < 0.2, tunic: TUNICS[Math.floor(r() * TUNICS.length)], hair: HAIR[Math.floor(r() * HAIR.length)],
       skin: SKIN[Math.floor(r() * SKIN.length)], hat: r() < 0.3, fur: ['#3a3532', '#d98b3a', '#e9e4da'][Math.floor(r() * 3)],
@@ -45,7 +45,7 @@
     const w = this.world, r = this.rand;
     this.sync();
     for (const v of this.list) {
-      if (v.state === 'walk') { v.state = 'idle'; v.timer = 0.2 + r() * 0.8; v.path = null; }
+      if (v.state === 'walk') { this.idle(v, 0.2 + r() * 0.8); v.act = 'look'; v.route = null; }
       if (drop && v.state !== 'inside' && Math.hypot(v.x - drop.x, v.y - drop.y) < 190) {
         v.hop = 0.75 + r() * 0.3;
         let best = null, bd = Infinity;
@@ -94,46 +94,89 @@
       }
 
       if (v.state === 'idle') {
-        v.timer -= dt;
+        v.timer -= dt; v.actT += dt;
+        if (v.act === 'chat' && v.partner) v.face = v.partner.x > v.x ? 1 : -1;
         if (v.timer > 0) continue;
         const goal = this.pickGoal(v, night);
         const path = goal ? w.walkRoute(w.cellOf(v.x, v.y), goal.cell) : null;
-        if (path && path.length > 1) { v.path = path; v.pi = 1; v.dest = goal; v.state = 'walk'; }
+        if (path && path.length > 1) this.startWalk(v, path, goal);
         else if (path && v.goingHome) { v.state = 'inside'; v.timer = 2 + r() * 20; }
-        else v.timer = 1 + r() * 3;
+        else this.idle(v, 1 + r() * 3);
         continue;
       }
 
-      // walking
-      const last = v.pi === v.path.length - 1;
-      // the last step goes to the exact spot; steps before it follow the cells (or lanes) of the route
-      const p = last ? v.dest : w.walkPoint(v.path[v.pi]);
-      const tx = p.x + (last && v.dest.loose ? v.ox : 0), ty = p.y + (last && v.dest.loose ? v.oy : 0);
-      const dx = tx - v.x, dy = ty - v.y, d = Math.hypot(dx, dy), stepLen = v.speed * dt;
-      if (Math.abs(dx) > 0.5) v.face = dx > 0 ? 1 : -1;
-      v.phase += dt * (v.kind === 'cat' ? 14 : 9);
-      if (d <= stepLen) {
-        v.x = tx; v.y = ty;
-        if (last) {
-          if (v.goingHome && v.home && v.home.target === 1) { v.state = 'inside'; v.timer = 2 + r() * 25; }
-          else { v.state = 'idle'; v.timer = (v.kind === 'cat' ? 4 : 3) + r() * 7; }
-        } else v.pi++;
-      } else { v.x += dx / d * stepLen; v.y += dy / d * stepLen; }
+      // walking: along a smoothed line through the route, easing in at the start and out at the end
+      const rt = v.route;
+      v.walkT += dt;
+      const left = v.routeLen - v.done;
+      let step = v.speed * dt * Math.min(1, 0.25 + v.walkT * 1.6) * Math.max(0.35, Math.min(1, left / 14));
+      v.phase += step * (v.kind === 'cat' ? 0.45 : 0.36);    // footfalls follow the distance actually walked
+      while (step > 0 && v.ri < rt.length) {
+        const p = rt[v.ri], dx = p.x - v.x, dy = p.y - v.y, d = Math.hypot(dx, dy);
+        if (Math.abs(dx) > 0.6 * Math.max(1, d * 0.3)) v.face = dx > 0 ? 1 : -1;
+        if (d <= step) { v.x = p.x; v.y = p.y; step -= d; v.done += d; v.ri++; }
+        else { v.x += dx / d * step; v.y += dy / d * step; v.done += step; step = 0; }
+      }
+      if (v.ri >= rt.length) {
+        if (v.goingHome && v.home && v.home.target === 1) { v.state = 'inside'; v.timer = 2 + r() * 25; }
+        else this.idle(v, (v.kind === 'cat' ? 4 : 3) + r() * 7);
+      }
     }
+  };
+
+  // Set off along a route of cells: the cells' walking points (on the lanes inside districts),
+  // rounded off into a smooth line, with each villager keeping slightly to their own side.
+  P.startWalk = function (v, path, goal) {
+    const w = this.world, side = v.ox * 0.35, pts = [{ x: v.x, y: v.y }];
+    for (let i = 1; i < path.length - 1; i++) { const p = w.walkPoint(path[i]); pts.push({ x: p.x + side, y: p.y + v.oy * 0.2 }); }
+    pts.push({ x: goal.x + (goal.loose ? v.ox : 0), y: goal.y + (goal.loose ? v.oy : 0) });
+    let route = pts;
+    for (let it = 0; it < 2 && route.length > 2; it++) {
+      const out = [route[0]];
+      for (let i = 0; i + 1 < route.length; i++) {
+        const a = route[i], b = route[i + 1];
+        out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+      }
+      out.push(route[route.length - 1]);
+      route = out;
+    }
+    let len = 0;
+    for (let i = 1; i < route.length; i++) len += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
+    Object.assign(v, { route, ri: 1, routeLen: len, done: 0, walkT: 0, dest: goal, state: 'walk', act: null, partner: null });
+  };
+
+  // Stand about for a while, doing one of a few small things: looking around, chatting with
+  // someone close by, crouching to tend the flowers, stretching, a happy little hop. Cats sit or groom.
+  P.idle = function (v, time) {
+    const r = this.rand, k = r();
+    v.state = 'idle'; v.timer = time; v.actT = 0; v.partner = null;
+    if (v.kind === 'cat') { v.act = k < 0.5 ? 'sit' : k < 0.8 ? 'groom' : 'look'; return; }
+    const near = this.list.find((o) => o !== v && o.kind === 'person' && o.state === 'idle' && Math.hypot(o.x - v.x, o.y - v.y) < 50);
+    if (near && k < 0.6) { v.act = 'chat'; v.partner = near; v.timer = Math.max(time, 4 + r() * 4); if (!near.partner) { near.act = 'chat'; near.partner = v; near.actT = 0; near.timer = Math.max(near.timer, v.timer); } }
+    else v.act = k < 0.4 ? 'look' : k < 0.62 ? 'crouch' : k < 0.8 ? 'stretch' : 'hop';
   };
 
   // Add a villager to a sprite batch. There is one picture per villager, so walking is shown by
   // bobbing and rocking it from side to side, and mirroring it to face the other way.
   HS.drawVillager = function (batch, v) {
     const walking = v.state === 'walk' && v.hop <= 0;
-    const lift = v.hop > 0 ? Math.abs(Math.sin(v.hop * 10)) * 7 : 0;
+    let lift = v.hop > 0 ? Math.abs(Math.sin(v.hop * 10)) * 7 : 0;
     const s = HS.sprites, cat = v.kind === 'cat';
     const set = cat ? s.cat : s.villager;
     if (!set || !set.length) return;
     const sp = set[v.spi % set.length];
-    const bob = walking ? Math.abs(Math.sin(v.phase)) * 1.5 : 0;
-    const tilt = walking ? Math.sin(v.phase) * 0.09 : Math.sin(v.look * 0.7) * 0.025;
+    let bob = walking ? Math.abs(Math.sin(v.phase)) * 1.5 : 0;
+    let tilt = walking ? Math.sin(v.phase) * 0.09 : Math.sin(v.look * 0.7) * 0.025, sy = 1;
+    if (!walking && v.state === 'idle') {
+      const t = v.actT || 0, ease = Math.min(1, t * 3);
+      if (v.act === 'crouch') { sy = 1 - 0.14 * ease; tilt = 0.12 * ease + Math.sin(t * 2.2) * 0.04; }        // tending the flowers
+      else if (v.act === 'stretch') { sy = 1 + 0.06 * Math.max(0, Math.sin(Math.min(t, 1.6) * 2)); }
+      else if (v.act === 'hop') { lift += t < 1.2 ? Math.abs(Math.sin(t * 7.8)) * 3.5 : 0; }
+      else if (v.act === 'chat') { bob = Math.max(0, Math.sin(t * 5.3 + v.spi)) * 0.9; tilt = Math.sin(t * 1.7 + v.spi) * 0.05; }
+      else if (v.act === 'sit') { sy = 1 - 0.18 * ease; }
+      else if (v.act === 'groom') { sy = 1 - 0.12 * ease; tilt = Math.sin(t * 6) * 0.08 * ease; }
+    }
     // the shadow is cast by the renderer from the figure itself; a hop throws it a little further
-    batch.add(sp, v.x, v.y - lift - bob, 1, 1, v.face < 0, 1, 1, 1, 1, tilt * (v.face < 0 ? -1 : 1), 0, 0, cat ? 4 : 8, lift + bob);
+    batch.add(sp, v.x, v.y - lift - bob, 1, sy, v.face < 0, 1, 1, 1, 1, tilt * (v.face < 0 ? -1 : 1), 0, 0, cat ? 4 : 8, lift + bob);
   };
 })(window.HS);
