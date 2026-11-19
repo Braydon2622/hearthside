@@ -36,7 +36,13 @@
     this.houses = [];
     this.lanterns = new Map();
     this.clusters = [];
-    this.plazaCells = [];
+    // "Districts": big solid blocks of icons, which get lanes and lawns instead of one huge plaza.
+    this.dist = new Float32Array(N);   this.distT = new Float32Array(N);   // how much each cell is district
+    this.lane = new Uint8Array(N);     // 1 where a district lane runs (where villagers walk)
+    this.props = new Map();            // houses in empty slots, small things in the gaps between icons
+    this.grid = { ox: 0, oy: 0, cw: HS.ICON_W, ch: HS.ICON_H };   // the icon grid, for drawing lanes
+    this.spots = [];                   // places a villager can go and stand
+    this.sprites = sprites;
     this.dirty = true;
     this.version = 0;
 
@@ -146,8 +152,80 @@
 
   // Route for a villager on foot: around buildings and trees, preferring paths and plazas.
   P.walkRoute = function (from, to) {
-    const b = this.blocked, pt = this.pathT, pl = this.plazaT;
-    return this.route(from, to, (c) => (b[c] && c !== from ? Infinity : (pt[c] > 0.5 || pl[c] > 0.5) ? 1 : 2.4), true);
+    const b = this.blocked, pt = this.pathT, pl = this.plazaT, di = this.distT, ln = this.lane;
+    return this.route(from, to, (c) => {
+      if (b[c] && c !== from) return Infinity;
+      if (di[c] > 0.5) return ln[c] ? 1 : 6;          // inside a district, stick to the lanes
+      return (pt[c] > 0.5 || pl[c] > 0.5) ? 1 : 2.4;
+    }, true);
+  };
+
+  // Where a villager actually puts their feet when crossing a cell. Inside a district this is
+  // pulled onto the nearest lane, so they walk between the icons and not underneath them.
+  P.walkPoint = function (c) {
+    const p = this.cellCenter(c), g = this.grid;
+    if (this.distT[c] > 0.5) {
+      const lx = g.ox + Math.round((p.x - g.ox) / g.cw) * g.cw, ly = g.oy + Math.round((p.y - g.oy) / g.ch) * g.ch;
+      if (Math.abs(lx - p.x) <= 13) p.x = lx;
+      if (Math.abs(ly - p.y) <= 13) p.y = ly + 2;
+    }
+    return p;
+  };
+
+  P.allHouses = function () {
+    const out = this.houses.slice();
+    for (const p of this.props.values()) if (p.kind === 'house') out.push(p);
+    return out;
+  };
+
+  // Look for districts: blocks of at least 12 grid-aligned icons, at least 3 wide and 3 tall.
+  // Returns the icon grid, the district icons, the empty slots inside them ("lots"), and the
+  // gaps between side-by-side icons where something small can stand. Null if there are none.
+  P.findDistricts = function (icons) {
+    if (icons.length < 12) return null;
+    const cw = icons[0].w, ch = icons[0].h, mod = (v, m) => ((v % m) + m) % m;
+    let ox = Infinity, oy = Infinity;
+    for (const r of icons) { ox = Math.min(ox, mod(r.x, cw)); oy = Math.min(oy, mod(r.y, ch)); }
+    const occ = new Map();
+    for (const r of icons) {
+      const fx = (r.x - ox) / cw, fy = (r.y - oy) / ch;
+      if (Math.abs(fx - Math.round(fx)) * cw > 3 || Math.abs(fy - Math.round(fy)) * ch > 3) return null;  // icons are not on a grid
+      occ.set(Math.round(fx) + ',' + Math.round(fy), r);
+    }
+    // flood-fill connected blocks of icons
+    const D = new Map(), seen = new Set();
+    for (const start of occ.keys()) {
+      if (seen.has(start)) continue;
+      const block = [], stack = [start];
+      seen.add(start);
+      let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity;
+      while (stack.length) {
+        const k = stack.pop(), [c, r] = k.split(',').map(Number);
+        block.push(k); c0 = Math.min(c0, c); c1 = Math.max(c1, c); r0 = Math.min(r0, r); r1 = Math.max(r1, r);
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const n = (c + dc) + ',' + (r + dr);
+          if (occ.has(n) && !seen.has(n)) { seen.add(n); stack.push(n); }
+        }
+      }
+      if (block.length >= 12 && c1 - c0 >= 2 && r1 - r0 >= 2) for (const k of block) D.set(k, occ.get(k));
+    }
+    if (!D.size) return null;
+
+    const lots = new Map(), gaps = [];
+    const bottom = this.height - HS.TASKBAR;
+    for (const k of D.keys()) {
+      const [c, r] = k.split(',').map(Number);
+      if (D.has((c + 1) + ',' + r)) gaps.push({ c, r, x: ox + (c + 1) * cw, top: oy + r * ch });
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const ec = c + dc, er = r + dr, ek = ec + ',' + er;
+        if (occ.has(ek) || lots.has(ek)) continue;
+        let near = 0;
+        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (D.has((ec + b) + ',' + (er + a))) near++;
+        const x = ox + ec * cw, y = oy + er * ch;
+        if (near >= 5 && x >= 0 && y >= 0 && x + cw <= this.width && y + ch <= bottom) lots.set(ek, { c: ec, r: er, x, y, w: cw, h: ch });
+      }
+    }
+    return { ox, oy, cw, ch, rects: [...D.values()], lots: [...lots.values()], gaps };
   };
 
   // Rearrange the village for a new set of icon rectangles.
@@ -156,23 +234,33 @@
     const W = this.W, H = this.H, N = W * H;
     const oldPlaza = this.plazaT.slice(), oldPath = this.pathT.slice();
     const plazaT = this.plazaT, pathT = this.pathT;
-    plazaT.fill(0); pathT.fill(0);
+    const oldDist = this.distT.slice(), distT = this.distT;
+    plazaT.fill(0); pathT.fill(0); distT.fill(0);
+
+    // 0. big solid blocks of icons become districts; their empty slots count as open ground too
+    const dz = this.findDistricts(icons);
+    if (dz) this.grid = { ox: dz.ox, oy: dz.oy, cw: dz.cw, ch: dz.ch };
+    const solid = dz ? icons.concat(dz.lots) : icons;
 
     // 1. open ground under and around every icon
     const reach = PLAZA_PAD + CS * 1.6;
-    for (const r of icons) {
-      const x0 = Math.max(0, Math.floor((r.x - reach) / CS)), x1 = Math.min(W - 1, Math.floor((r.x + r.w + reach) / CS));
-      const y0 = Math.max(0, Math.floor((r.y - reach) / CS)), y1 = Math.min(H - 1, Math.floor((r.y + r.h + reach) / CS));
-      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-        const d = HS.rectDist((x + 0.5) * CS, (y + 0.5) * CS, r);
-        const v = HS.clamp(0.5 + (PLAZA_PAD - d) / (1.6 * CS), 0, 1);
-        if (v > plazaT[y * W + x]) plazaT[y * W + x] = v;
+    const stamp = (field, rects) => {
+      for (const r of rects) {
+        const x0 = Math.max(0, Math.floor((r.x - reach) / CS)), x1 = Math.min(W - 1, Math.floor((r.x + r.w + reach) / CS));
+        const y0 = Math.max(0, Math.floor((r.y - reach) / CS)), y1 = Math.min(H - 1, Math.floor((r.y + r.h + reach) / CS));
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          const d = HS.rectDist((x + 0.5) * CS, (y + 0.5) * CS, r);
+          const v = HS.clamp(0.5 + (PLAZA_PAD - d) / (1.6 * CS), 0, 1);
+          if (v > field[y * W + x]) field[y * W + x] = v;
+        }
       }
-    }
+    };
+    stamp(plazaT, solid);
+    if (dz) stamp(distT, dz.rects.concat(dz.lots));
 
     // 2. anything that would stand on or in front of an icon tucks away
     const want = new Uint8Array(this.objects.length).fill(1);
-    const padded = icons.map((r) => ({ x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 }));
+    const padded = solid.map((r) => ({ x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 }));
     for (const o of this.objects) for (const r of padded) if (HS.rectsOverlap(o.bbox, r)) { want[o.id] = 0; break; }
 
     // 3. group icons that sit next to each other into clusters
@@ -232,7 +320,10 @@
       let since = 3;
       for (const c of cells) {
         onPath[c] = 1;
-        if (plazaT[c] < 0.4 && ++since >= 7 && c % W < W - 2) { since = 0; lanternSpots.set(c, true); }
+        if (plazaT[c] < 0.4 && ++since >= 7 && c % W < W - 2) {
+          since = 0;
+          lanternSpots.set('p' + c, { x: (c % W + 0.5) * CS + 15, y: (Math.floor(c / W) + 0.5) * CS + 2 });
+        }
       }
     }
     for (let c = 0; c < N; c++) {
@@ -253,9 +344,10 @@
     const wave = (px, py) => (drop ? Math.min(0.9, Math.hypot(px - drop.x, py - drop.y) / 900) : 0);
     for (let c = 0; c < N; c++) {
       if (!drop) { this.plaza[c] = plazaT[c]; this.path[c] = pathT[c]; this.delay[c] = 0; }
-      else if (Math.abs(plazaT[c] - oldPlaza[c]) > 0.05 || Math.abs(pathT[c] - oldPath[c]) > 0.05) {
+      else if (Math.abs(plazaT[c] - oldPlaza[c]) > 0.05 || Math.abs(pathT[c] - oldPath[c]) > 0.05 || Math.abs(distT[c] - oldDist[c]) > 0.05) {
         this.delay[c] = wave((c % W + 0.5) * CS, (Math.floor(c / W) + 0.5) * CS);
       }
+      if (!drop) this.dist[c] = distT[c];
     }
     this.blocked.fill(0);
     for (const o of objects) {
@@ -265,18 +357,70 @@
       if (t && o.blocking) for (const c of o.cells) this.blocked[c] = 1;
     }
 
-    // lanterns along the paths
-    for (const [c, l] of this.lanterns) if (!lanternSpots.has(c)) l.target = 0;
-    for (const c of lanternSpots.keys()) {
-      const l = this.lanterns.get(c);
-      if (l) l.target = 1;
-      else this.lanterns.set(c, { x: (c % W + 0.5) * CS + 15, y: (Math.floor(c / W) + 0.5) * CS + 2, scale: drop ? 0 : 1, target: 1, delay: drop ? 0.8 : 0 });
+    // 6. district furnishings: a house or tree in each empty slot, and small things in the gaps
+    //    between side-by-side icons (which are the only places nothing covers on a full desktop)
+    const wanted = new Map(), freeGaps = [];
+    if (dz) {
+      const sp = this.sprites, small = sp.house.filter((s) => s.cells === 3);
+      for (const lot of dz.lots) {
+        const h = HS.hash2(lot.c * 3 + 11, lot.r * 5 + 7), pickN = (list) => list[Math.floor(HS.hash2(lot.c + 29, lot.r + 43) * list.length)];
+        const cx = lot.x + lot.w / 2;
+        if (h < 0.65) wanted.set('L' + lot.c + ',' + lot.r, { kind: 'house', sp: pickN(small), x: cx, y: lot.y + lot.h - 8 });
+        else wanted.set('L' + lot.c + ',' + lot.r, { kind: 'tree', sp: pickN(h < 0.85 ? sp.tree : sp.blossom), x: cx, y: lot.y + lot.h - 16, sway: true });
+      }
+      for (const g of dz.gaps) {
+        const h = HS.hash2(g.c * 7 + 3, g.r * 13 + 1), kind = HS.hash2(g.c + 91, g.r + 17), y = g.top + Math.min(52, dz.ch * 0.55);
+        if (y > this.height - HS.TASKBAR - 4) continue;
+        if (h >= 0.3) { freeGaps.push({ x: g.x, y: y - 4 }); continue; }
+        if (kind < 0.35) lanternSpots.set('g' + g.c + ',' + g.r, { x: g.x, y });
+        else if (kind < 0.75) wanted.set('G' + g.c + ',' + g.r, { kind: 'cypress', sp: sp.cypress[Math.floor(kind * 97) % sp.cypress.length], x: g.x, y, sway: true });
+        else wanted.set('G' + g.c + ',' + g.r, { kind: 'tub', sp: sp.tub[Math.floor(kind * 97) % sp.tub.length], x: g.x, y });
+      }
+    }
+    for (const [k, p] of this.props) if (!wanted.has(k)) p.target = 0;
+    for (const [k, d] of wanted) {
+      let p = this.props.get(k);
+      if (!p) {
+        p = Object.assign(d, { scale: drop ? 0 : 1, delay: drop ? wave(d.x, d.y) + 0.5 : 0, phase: HS.hash2(d.x | 0, d.y | 0) * 6.28, smoke: 0 });
+        if (p.kind === 'house') p.door = this.cellOf(p.x, p.y + 8);
+        this.props.set(k, p);
+      }
+      p.target = 1;
+      if (p.kind === 'house') {   // villagers go around the house, not through it
+        for (let yy = p.y - 30; yy <= p.y - 4; yy += CS / 2) for (let xx = p.x - 26; xx <= p.x + 26; xx += CS / 2) {
+          const c = this.cellOf(xx, yy); if (c !== p.door) this.blocked[c] = 1;
+        }
+      }
     }
 
-    // places a villager can stand in each plaza
+    // lanterns: along the paths, and in some district gaps
+    for (const [k, l] of this.lanterns) if (!lanternSpots.has(k)) l.target = 0;
+    for (const [k, pos] of lanternSpots) {
+      const l = this.lanterns.get(k);
+      if (l) l.target = 1;
+      else this.lanterns.set(k, { x: pos.x, y: pos.y, scale: drop ? 0 : 1, target: 1, delay: drop ? 0.8 : 0 });
+    }
+
+    // district lanes run along the edges of the icon grid
+    const g = this.grid;
+    this.lane.fill(0);
+    if (dz) for (let c = 0; c < N; c++) {
+      if (distT[c] <= 0.5) continue;
+      const px = (c % W + 0.5) * CS, py = (Math.floor(c / W) + 0.5) * CS;
+      const dx = Math.abs(px - (g.ox + Math.round((px - g.ox) / g.cw) * g.cw)), dy = Math.abs(py - (g.oy + Math.round((py - g.oy) / g.ch) * g.ch));
+      if (dx <= 13 || dy <= 13) this.lane[c] = 1;
+    }
+
+    // places a villager can go and stand: anywhere on an ordinary plaza, and in a district
+    // the free gaps between icons, where they can actually be seen
     const maxRow = Math.floor((this.height - HS.TASKBAR - 6) / CS);
-    this.plazaCells = [];
-    for (let c = 0; c < N; c++) if (plazaT[c] > 0.6 && !this.blocked[c] && Math.floor(c / W) < maxRow) this.plazaCells.push(c);
+    this.spots = [];
+    for (let c = 0; c < N; c++) {
+      if (plazaT[c] > 0.6 && distT[c] < 0.5 && !this.blocked[c] && Math.floor(c / W) < maxRow) {
+        const p = this.cellCenter(c); this.spots.push({ cell: c, x: p.x, y: p.y, loose: true });
+      }
+    }
+    for (const f of freeGaps) { const c = this.cellOf(f.x, f.y); if (!this.blocked[c]) this.spots.push({ cell: c, x: f.x, y: f.y, loose: false }); }
     this.dirty = true;
     this.version++;
   };
@@ -286,11 +430,17 @@
     const N = this.W * this.H, k = 1 - Math.exp(-dt * 7);
     let moving = false;
     for (let c = 0; c < N; c++) {
-      const dp = this.plazaT[c] - this.plaza[c], dq = this.pathT[c] - this.path[c];
-      if (Math.abs(dp) < 0.004 && Math.abs(dq) < 0.004) continue;
+      const dp = this.plazaT[c] - this.plaza[c], dq = this.pathT[c] - this.path[c], dd = this.distT[c] - this.dist[c];
+      if (Math.abs(dp) < 0.004 && Math.abs(dq) < 0.004 && Math.abs(dd) < 0.004) continue;
       moving = true;
       if (this.delay[c] > 0) { this.delay[c] -= dt; continue; }
-      this.plaza[c] += dp * k; this.path[c] += dq * k;
+      this.plaza[c] += dp * k; this.path[c] += dq * k; this.dist[c] += dd * k;
+    }
+    for (const [key, p] of this.props) {
+      if (p.scale === p.target) continue;
+      if (p.delay > 0) { p.delay -= dt; continue; }
+      p.scale += (p.target - p.scale) * (1 - Math.exp(-dt * (p.target ? 5 : 12)));
+      if (Math.abs(p.target - p.scale) < 0.01) { p.scale = p.target; if (!p.target) this.props.delete(key); }
     }
     if (moving) this.dirty = true;
     for (const o of this.objects) {

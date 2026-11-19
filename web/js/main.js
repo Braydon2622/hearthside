@@ -68,12 +68,15 @@
     const movers = [];
     for (const v of villagers.list) if (v.state !== 'inside') movers.push({ y: v.y, v });
     for (const l of world.lanterns.values()) if (l.scale > 0.02) movers.push({ y: l.y, l });
+    for (const p of world.props.values()) if (p.scale > 0.02) movers.push({ y: p.y, p });
     movers.sort((a, b) => a.y - b.y);
     let mi = 0;
     const flush = (y) => {
       while (mi < movers.length && movers[mi].y <= y) {
         const m = movers[mi++];
-        if (m.v) HS.drawVillager(sg, m.v); else HS.drawSprite(sg, sprites.lantern, m.l.x, m.l.y, m.l.scale);
+        if (m.v) HS.drawVillager(sg, m.v);
+        else if (m.l) HS.drawSprite(sg, sprites.lantern, m.l.x, m.l.y, m.l.scale);
+        else HS.drawSprite(sg, m.p.sp, m.p.x, m.p.y, m.p.scale, m.p.sway ? Math.sin(time * 1.3 + m.p.phase) * 0.025 : 0);
       }
     };
     for (const o of world.objects) {
@@ -84,7 +87,7 @@
     flush(Infinity);
 
     // chimney smoke
-    for (const hs of world.houses) {
+    for (const hs of world.allHouses()) {
       if (hs.scale < 0.95) continue;
       hs.smoke -= dt;
       if (hs.smoke <= 0) {
@@ -120,7 +123,7 @@
     gg.clearRect(0, 0, glowCv.width, glowCv.height);
     if (night < 0.02) return;
     const glow = sprites.glow;
-    for (const hs of world.houses) {
+    for (const hs of world.allHouses()) {
       if (hs.scale < 0.9) continue;
       const flick = 0.9 + Math.sin(time * 3 + hs.phase * 5) * 0.06;
       for (const win of hs.sp.windows) {
@@ -165,6 +168,7 @@
   $('addIcon').addEventListener('click', () => icons.add());
   $('removeIcon').addEventListener('click', () => icons.removeLast());
   $('resetIcons').addEventListener('click', () => icons.reset());
+  $('fillIcons').addEventListener('click', () => icons.fill());
   let resizeTimer = 0;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 200); });
 

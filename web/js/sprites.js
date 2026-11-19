@@ -124,6 +124,26 @@
     });
   }
 
+  // Slim things that fit in the narrow gap between two side-by-side desktop icons.
+  function cypress(hgt, cols) {
+    const cw = 20, ch = hgt + 8, cx = cw / 2, by = ch - 4;
+    return make(cw, ch, cx, by, (g) => {
+      shadow(g, cx, by, 6, 2.5);
+      g.fillStyle = '#5c412c'; g.fillRect(cx - 1.5, by - 6, 3, 6);
+      g.fillStyle = cols[0]; g.beginPath(); g.ellipse(cx, by - 4 - hgt * 0.46, 6.5, hgt * 0.46, 0, 0, 7); g.fill();
+      g.fillStyle = cols[1]; g.beginPath(); g.ellipse(cx - 1.5, by - 6 - hgt * 0.48, 3.6, hgt * 0.36, 0, 0, 7); g.fill();
+    });
+  }
+
+  function tub(flowers) {
+    return make(20, 20, 10, 18, (g) => {
+      shadow(g, 10, 18, 7, 2.5);
+      g.fillStyle = '#9a6a45'; g.beginPath(); g.moveTo(4, 10); g.lineTo(16, 10); g.lineTo(14.5, 18); g.lineTo(5.5, 18); g.closePath(); g.fill();
+      g.fillStyle = '#5f8f45'; g.beginPath(); g.arc(10, 8.5, 6, 0, 7); g.fill();
+      for (let i = 0; i < 5; i++) { g.fillStyle = flowers[i % flowers.length]; g.beginPath(); g.arc(6 + i * 2, 6 + (i % 2) * 3.5, 1.7, 0, 7); g.fill(); }
+    });
+  }
+
   function lantern() {
     return make(14, 30, 7, 28, (g) => {
       shadow(g, 7, 28, 5, 2);
@@ -171,6 +191,8 @@
     for (const hgt of [38, 48]) { s.pine.push(pine(hgt, ['#2f5d4c', '#3f7a60'])); s.pine.push(pine(hgt, ['#35603a', '#4c8050'])); }
     for (const cols of greens) s.bush.push(bush(cols));
     for (let i = 0; i < 3; i++) s.flowerbed.push(flowerbed(rand));
+    s.cypress = [cypress(38, ['#2f5d4c', '#3f7a60']), cypress(32, ['#35603a', '#4c8050']), cypress(42, ['#3f6b3a', '#57894a'])];
+    s.tub = [tub(['#e8697a', '#f4f0e6']), tub(['#f3c64f', '#b48be0']), tub(['#f4f0e6', '#e8697a', '#f3c64f'])];
     return s;
   };
 

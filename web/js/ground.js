@@ -15,6 +15,7 @@
     uniform vec2 uRes;      // screen size in pixels
     uniform vec2 uWorld;    // world size in pixels (cells * cell size)
     uniform sampler2D uField;
+    uniform vec4 uGrid;     // desktop icon grid: origin x, origin y, cell width, cell height
 
     float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
     float noise(vec2 p) {
@@ -39,7 +40,7 @@
 
     void main() {
       vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
-      vec3 f = texture2D(uField, px / uWorld).rgb;
+      vec4 f = texture2D(uField, px / uWorld);
       float village = f.b;
 
       // grass, with big soft patches and fine speckle
@@ -72,6 +73,24 @@
       float flower = step(0.93, hash(fc)) * step(length(fract(px / 9.0) - 0.5), 0.2);
       meadow = mix(meadow, mix(vec3(0.98, 0.95, 0.85), vec3(0.95, 0.62, 0.68), hash(fc + 3.0)), flower);
       vec3 plazaCol = mix(meadow, stone, smoothstep(0.40, 0.60, village + wob * 0.3));
+
+      // district: a patchwork of lawn lots (one per icon slot) divided by cobbled lanes
+      float district = smoothstep(0.45, 0.55, f.a + wob * 0.15);
+      if (district > 0.0) {
+        vec2 gp = px - uGrid.xy;
+        vec2 cell = floor(gp / uGrid.zw), loc = gp - cell * uGrid.zw;
+        float dx = min(loc.x, uGrid.z - loc.x), dy = min(loc.y, uGrid.w - loc.y);
+        float lw = fbm(px / 9.0 + 4.0) * 5.0;
+        float lane = max(1.0 - smoothstep(8.0, 11.0, dx + lw), 1.0 - smoothstep(5.0, 8.0, dy + lw));
+        vec3 lawn = mix(vec3(0.47, 0.66, 0.33), vec3(0.58, 0.74, 0.39), fbm(px / 50.0 + 8.0));
+        lawn *= 0.95 + hash(cell) * 0.10;                 // each lot a slightly different green
+        lawn *= 0.96 + fine * 0.07;
+        float edge = max(1.0 - smoothstep(9.0, 17.0, dx + lw), 1.0 - smoothstep(6.0, 13.0, dy + lw));
+        lawn *= 1.0 - edge * 0.10;                        // lots darken a touch toward the lane
+        float fl = step(0.965, hash(floor(px / 8.0) + 11.0)) * step(length(fract(px / 8.0) - 0.5), 0.22);
+        lawn = mix(lawn, vec3(0.98, 0.95, 0.80), fl);
+        plazaCol = mix(plazaCol, mix(lawn, stone, lane), district);
+      }
 
       vec3 col = grass;
       // soft shadow in the grass just outside paths and plazas, so they look slightly sunk in
@@ -118,6 +137,7 @@
 
     const uRes = gl.getUniformLocation(prog, 'uRes');
     const uWorld = gl.getUniformLocation(prog, 'uWorld');
+    const uGrid = gl.getUniformLocation(prog, 'uGrid');
     let pixels = null;
 
     // Redraw the ground from the world's current plaza / path / village amounts.
@@ -128,12 +148,13 @@
         pixels[i * 4] = world.plaza[i] * 255;
         pixels[i * 4 + 1] = world.path[i] * 255;
         pixels[i * 4 + 2] = world.village[i] * 255;
-        pixels[i * 4 + 3] = 255;
+        pixels[i * 4 + 3] = world.dist[i] * 255;
       }
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, world.W, world.H, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uWorld, world.W * HS.CS, world.H * HS.CS);
+      gl.uniform4f(uGrid, world.grid.ox, world.grid.oy, world.grid.cw, world.grid.ch);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
   };

@@ -14,16 +14,16 @@
   };
   const P = HS.Villagers.prototype;
 
-  P.activeHouses = function () { return this.world.houses.filter((h) => h.target === 1); };
+  P.activeHouses = function () { return this.world.allHouses().filter((h) => h.target === 1); };
 
   P.spawn = function (kind) {
     const r = this.rand, w = this.world, homes = this.activeHouses();
     const home = homes.length ? homes[Math.floor(r() * homes.length)] : null;
-    let cell = home ? home.door : (w.plazaCells[0] !== undefined ? w.plazaCells[Math.floor(r() * w.plazaCells.length)] : w.cellOf(w.width / 2, w.height / 2));
-    const p = w.cellCenter(cell);
+    const spot = !home && w.spots.length ? w.spots[Math.floor(r() * w.spots.length)] : null;
+    const p = home ? w.cellCenter(home.door) : spot ? { x: spot.x, y: spot.y } : { x: w.width / 2, y: w.height / 2 };
     const v = {
       kind, home, x: p.x, y: p.y, ox: (r() - 0.5) * 10, oy: (r() - 0.5) * 8,
-      state: 'idle', timer: r() * 4, path: null, pi: 0, goingHome: false, goal: -1,
+      state: 'idle', timer: r() * 4, path: null, pi: 0, goingHome: false, goal: null, dest: null,
       speed: kind === 'cat' ? 46 : 24 + r() * 12, phase: r() * 6, hop: 0, face: 1, look: r() * 6,
       owl: r() < 0.2, tunic: TUNICS[Math.floor(r() * TUNICS.length)], hair: HAIR[Math.floor(r() * HAIR.length)],
       skin: SKIN[Math.floor(r() * SKIN.length)], hat: r() < 0.3, fur: ['#3a3532', '#d98b3a', '#e9e4da'][Math.floor(r() * 3)],
@@ -48,10 +48,10 @@
       if (v.state === 'walk') { v.state = 'idle'; v.timer = 0.2 + r() * 0.8; v.path = null; }
       if (drop && v.state !== 'inside' && Math.hypot(v.x - drop.x, v.y - drop.y) < 190) {
         v.hop = 0.75 + r() * 0.3;
-        let best = -1, bd = Infinity;
-        for (const c of w.plazaCells) {
-          const p = w.cellCenter(c), d = Math.hypot(p.x - drop.x, p.y - drop.y) + r() * 30;
-          if (d < bd) { bd = d; best = c; }
+        let best = null, bd = Infinity;
+        for (const s of w.spots) {
+          const d = Math.hypot(s.x - drop.x, s.y - drop.y) + r() * 30;
+          if (d < bd) { bd = d; best = s; }
         }
         v.goal = best; v.timer = Math.min(v.timer, 0.3);
       }
@@ -61,21 +61,24 @@
   P.pickGoal = function (v, night) {
     const w = this.world, r = this.rand;
     v.goingHome = false;
-    if (v.goal >= 0) { const g = v.goal; v.goal = -1; if (!w.blocked[g]) return g; }
+    const at = (c) => { const p = w.cellCenter(c); return { cell: c, x: p.x, y: p.y, loose: true }; };
+    if (v.goal) { const g = v.goal; v.goal = null; if (!w.blocked[g.cell]) return g; }
     if (v.kind === 'person' && night > 0.65 && !v.owl) {
       if (!v.home || v.home.target !== 1) { const hs = this.activeHouses(); v.home = hs.length ? hs[Math.floor(r() * hs.length)] : null; }
-      if (v.home) { v.goingHome = true; return v.home.door; }
+      if (v.home) { v.goingHome = true; const d = at(v.home.door); d.loose = false; return d; }
     }
-    if (v.kind === 'person' && w.plazaCells.length && r() < 0.7) return w.plazaCells[Math.floor(r() * w.plazaCells.length)];
+    if (v.kind === 'person' && w.spots.length && r() < 0.7) return w.spots[Math.floor(r() * w.spots.length)];
     // otherwise a short wander nearby
     const cx = Math.floor(v.x / CS), cy = Math.floor(v.y / CS), maxRow = Math.floor((w.height - HS.TASKBAR - 6) / CS);
     for (let i = 0; i < 12; i++) {
       const x = cx + Math.floor((r() - 0.5) * 18), y = cy + Math.floor((r() - 0.5) * 14);
       if (x < 1 || y < 1 || x >= w.W - 1 || y >= maxRow) continue;
       const c = y * w.W + x;
-      if (!w.blocked[c] && (w.village[c] > 0.5 || w.pathT[c] > 0.5 || w.plazaT[c] > 0.5)) return c;
+      if (w.blocked[c]) continue;
+      if (w.distT[c] > 0.5) { if (w.lane[c]) { const p = w.walkPoint(c); return { cell: c, x: p.x, y: p.y, loose: false }; } continue; }
+      if (w.village[c] > 0.5 || w.pathT[c] > 0.5 || w.plazaT[c] > 0.5) return at(c);
     }
-    return -1;
+    return null;
   };
 
   P.step = function (dt, night) {
@@ -94,8 +97,8 @@
         v.timer -= dt;
         if (v.timer > 0) continue;
         const goal = this.pickGoal(v, night);
-        const path = goal >= 0 ? w.walkRoute(w.cellOf(v.x, v.y), goal) : null;
-        if (path && path.length > 1) { v.path = path; v.pi = 1; v.state = 'walk'; }
+        const path = goal ? w.walkRoute(w.cellOf(v.x, v.y), goal.cell) : null;
+        if (path && path.length > 1) { v.path = path; v.pi = 1; v.dest = goal; v.state = 'walk'; }
         else if (path && v.goingHome) { v.state = 'inside'; v.timer = 2 + r() * 20; }
         else v.timer = 1 + r() * 3;
         continue;
@@ -103,8 +106,9 @@
 
       // walking
       const last = v.pi === v.path.length - 1;
-      const p = w.cellCenter(v.path[v.pi]);
-      const tx = p.x + (last && !v.goingHome ? v.ox : 0), ty = p.y + (last && !v.goingHome ? v.oy : 0);
+      // the last step goes to the exact spot; steps before it follow the cells (or lanes) of the route
+      const p = last ? v.dest : w.walkPoint(v.path[v.pi]);
+      const tx = p.x + (last && v.dest.loose ? v.ox : 0), ty = p.y + (last && v.dest.loose ? v.oy : 0);
       const dx = tx - v.x, dy = ty - v.y, d = Math.hypot(dx, dy), stepLen = v.speed * dt;
       if (Math.abs(dx) > 0.5) v.face = dx > 0 ? 1 : -1;
       v.phase += dt * (v.kind === 'cat' ? 14 : 9);
