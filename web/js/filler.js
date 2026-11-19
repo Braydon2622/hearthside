@@ -12,11 +12,11 @@
   const S = 2;   // drawn at double size, like the other sprites
   // the shared palette written by tools/cut-sprites.ps1 (web/art/palette.json); these are its colours
   const C = {
-    deep: '#254b33', green: '#507338', leaf: '#7a9447', light: '#98b44c', lime: '#c1d25d',
-    bark: '#542920', wood: '#6a4435', plank: '#8e563e', tan: '#ba6f4b',
-    stoneDk: '#8a7462', stone: '#b9a895', stoneLt: '#e4c7ad', slate: '#43566a',
-    red: '#d3403a', pink: '#dc76a2', yellow: '#f9d254', cream: '#f2e3c6', blue: '#88abb6', orange: '#ea9537',
-    soil: '#6a4435', soilDk: '#542920',
+    deep: '#244b33', green: '#446638', leaf: '#61803b', light: '#869851', lime: '#acc251',
+    bark: '#4e2922', wood: '#6b4636', plank: '#8c5d47', tan: '#ba714c',
+    stoneDk: '#636d82', stone: '#c8af97', stoneLt: '#ede1cd', slate: '#485669',
+    red: '#b64e51', pink: '#f4ac88', yellow: '#efd16f', cream: '#ede1cd', blue: '#8fa4b3', orange: '#e37929',
+    soil: '#6b4636', soilDk: '#4e2922',
   };
 
   function make(w, h, ax, ay, paint) {

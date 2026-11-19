@@ -209,13 +209,24 @@ been cut by about 15 MB from its peak during this work.
 Checked: `06-life-*` screenshots (all four states, both sizes); villager positions sampled in the browser
 (smooth curves, eased stops, idle actions cycling); real desktop captured (kept out of the repo).
 
+## Milestone 4, finished (2026-11-19)
+
+- The villager sheet and an animal sheet (four cats, four dogs) were generated from a second Figma account the
+  owner set up (two calls; prompts and file in `art/SOURCES.md`). The cutter now also cuts `animals`, and the
+  shared palette was rebuilt with the new sprites included (still 28 colours); the code-drawn filler colours
+  in `filler.js` were updated to the new palette.
+- Villagers are drawn about 27-32 px tall, cats and dogs about 15-18 px long. The village now has two animals,
+  a cat and a dog (`kind: 'dog'` joins `'cat'`; both use the pet walk, speed and idle actions).
+- The villagers are closer to three-quarter view than 78 degrees; kept, because at 30 px they read far better
+  than a figure seen straight down would.
+
+Measured (real app, animating, three 30 s runs): **6.7 to 9.3 % of one core, 424 to 431 MB.**
+Screenshots `06-life-*` re-taken with the new villagers.
+
 ## Summary and what is left
 
-All six milestones are in; milestone 4 is incomplete for lack of image credits:
-- not generated: the villager sheet and the two-animal sheet (Figma AI credits ran out, resets 2026-11-20
-  00:00 UTC). Villagers and cats still use the first-generation side-view art, now on the shared palette. This is
-  the most visible remaining mismatch with the camera spec.
-- worth regenerating when credits return: props at a steeper angle without dark outlines.
+All six milestones are in, including the villager and animal art for milestone 4 (generated a day late).
+- Worth regenerating some day: props at a steeper angle without dark outlines.
 
 Things I could not verify fully:
 - the real desktop was checked by `PrintWindow` captures (tools/deskshot.ps1), not by eye on the monitor;

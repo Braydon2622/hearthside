@@ -218,6 +218,7 @@
     const hair = ['#3a2a20', '#6b4a2b', '#1f1b1a', '#a9652f', '#d8d2c4'], skin = ['#f1cfa8', '#e0b48a', '#c99772'];
     s.villager = tunics.map((t, i) => personSprite(t, hair[i % hair.length], skin[i % skin.length], i % 3 === 1));
     s.cat = ['#3a3532', '#d98b3a', '#e9e4da'].map(catSprite);
+    s.dog = s.cat;   // until the painted dogs load
     // houses come in two widths: 3 cells and 4 cells
     for (const cells of [3, 4]) {
       for (let i = 0; i < roofs.length; i++) {
@@ -277,8 +278,9 @@
     lantern:   { dir: 'props', items: [[9, 26]] },
     decor:     { dir: 'props', items: [[0, 72], [1, 52], [2, 66], [3, 46], [4, 46], [5, 40], [8, 46]] },
     // people and cats are all shrunk by the same amount, so children stay shorter than adults
-    villager:  { dir: 'villagers', scale: 0.098, items: [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]] },
-    cat:       { dir: 'villagers', scale: 0.062, items: [[10], [11]] },
+    villager:  { dir: 'villagers', scale: 0.1, items: [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]] },
+    cat:       { dir: 'animals', scale: 0.06, items: [[0], [1], [2], [3]] },
+    dog:       { dir: 'animals', scale: 0.066, items: [[4], [5], [6], [7]] },
   };
 
   function fromImage(img, drawW, kind, chimneyX) {

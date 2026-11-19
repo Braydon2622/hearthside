@@ -24,7 +24,7 @@
     const v = {
       kind, home, x: p.x, y: p.y, ox: (r() - 0.5) * 10, oy: (r() - 0.5) * 8,
       spi: Math.floor(r() * 1000), state: 'idle', timer: r() * 4, act: 'look', actT: 0, route: null, ri: 0, goingHome: false, goal: null, dest: null,
-      speed: kind === 'cat' ? 46 : 24 + r() * 12, phase: r() * 6, hop: 0, face: 1, look: r() * 6,
+      speed: kind !== 'person' ? 46 : 24 + r() * 12, phase: r() * 6, hop: 0, face: 1, look: r() * 6,
       owl: r() < 0.2, tunic: TUNICS[Math.floor(r() * TUNICS.length)], hair: HAIR[Math.floor(r() * HAIR.length)],
       skin: SKIN[Math.floor(r() * SKIN.length)], hat: r() < 0.3, fur: ['#3a3532', '#d98b3a', '#e9e4da'][Math.floor(r() * 3)],
     };
@@ -37,7 +37,8 @@
     const want = HS.clamp(6 + this.world.clusters.length * 2, 8, 15);
     const people = this.list.filter((v) => v.kind === 'person').length;
     for (let i = people; i < want; i++) this.spawn('person');
-    if (!this.list.some((v) => v.kind === 'cat')) this.spawn('cat');
+    // two animals live in the village: a cat and a dog
+    for (const pet of ['cat', 'dog']) if (!this.list.some((v) => v.kind === pet)) this.spawn(pet);
   };
 
   // The world just rearranged: everyone re-plans, and those near the drop get curious.
@@ -110,7 +111,7 @@
       v.walkT += dt;
       const left = v.routeLen - v.done;
       let step = v.speed * dt * Math.min(1, 0.25 + v.walkT * 1.6) * Math.max(0.35, Math.min(1, left / 14));
-      v.phase += step * (v.kind === 'cat' ? 0.45 : 0.36);    // footfalls follow the distance actually walked
+      v.phase += step * (v.kind !== 'person' ? 0.45 : 0.36);    // footfalls follow the distance actually walked
       while (step > 0 && v.ri < rt.length) {
         const p = rt[v.ri], dx = p.x - v.x, dy = p.y - v.y, d = Math.hypot(dx, dy);
         if (Math.abs(dx) > 0.6 * Math.max(1, d * 0.3)) v.face = dx > 0 ? 1 : -1;
@@ -119,7 +120,7 @@
       }
       if (v.ri >= rt.length) {
         if (v.goingHome && v.home && v.home.target === 1) { v.state = 'inside'; v.timer = 2 + r() * 25; }
-        else this.idle(v, (v.kind === 'cat' ? 4 : 3) + r() * 7);
+        else this.idle(v, (v.kind !== 'person' ? 4 : 3) + r() * 7);
       }
     }
   };
@@ -150,7 +151,7 @@
   P.idle = function (v, time) {
     const r = this.rand, k = r();
     v.state = 'idle'; v.timer = time; v.actT = 0; v.partner = null;
-    if (v.kind === 'cat') { v.act = k < 0.5 ? 'sit' : k < 0.8 ? 'groom' : 'look'; return; }
+    if (v.kind !== 'person') { v.act = k < 0.5 ? 'sit' : k < 0.8 ? 'groom' : 'look'; return; }   // pets sit, groom or scratch, or look about
     const near = this.list.find((o) => o !== v && o.kind === 'person' && o.state === 'idle' && Math.hypot(o.x - v.x, o.y - v.y) < 50);
     if (near && k < 0.6) { v.act = 'chat'; v.partner = near; v.timer = Math.max(time, 4 + r() * 4); if (!near.partner) { near.act = 'chat'; near.partner = v; near.actT = 0; near.timer = Math.max(near.timer, v.timer); } }
     else v.act = k < 0.4 ? 'look' : k < 0.62 ? 'crouch' : k < 0.8 ? 'stretch' : 'hop';
@@ -161,8 +162,8 @@
   HS.drawVillager = function (batch, v) {
     const walking = v.state === 'walk' && v.hop <= 0;
     let lift = v.hop > 0 ? Math.abs(Math.sin(v.hop * 10)) * 7 : 0;
-    const s = HS.sprites, cat = v.kind === 'cat';
-    const set = cat ? s.cat : s.villager;
+    const s = HS.sprites, cat = v.kind !== 'person';
+    const set = cat ? s[v.kind] : s.villager;
     if (!set || !set.length) return;
     const sp = set[v.spi % set.length];
     let bob = walking ? Math.abs(Math.sin(v.phase)) * 1.5 : 0;

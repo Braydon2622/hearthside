@@ -4,6 +4,7 @@
 #   art/source/houses.png  ->  web/art/houses/00.png, 01.png, ...
 #   art/source/trees.png   ->  web/art/trees/...
 #   art/source/props.png   ->  web/art/props/...
+#   art/source/v2/animals.png -> web/art/animals/...
 #   art/source/ground.png  ->  web/art/ground/grass.png, cobble.png, dirt.png, lawn.png
 #
 # Sprites are numbered left to right, top to bottom, the same order they appear on the sheet.
@@ -155,7 +156,7 @@ public static class Cutter {
 }
 '@
 # Sheets at the high eagle-eye camera (art/source/v2) win over the first-generation sheets.
-foreach ($sheet in 'houses', 'trees', 'props', 'villagers') {
+foreach ($sheet in 'houses', 'trees', 'props', 'villagers', 'animals') {
   $src = Join-Path $root "art\source\v2\$sheet.png"
   if (-not (Test-Path $src)) { $src = Join-Path $root "art\source\$sheet.png" }
   if (-not (Test-Path $src)) { "missing $src"; continue }
@@ -165,7 +166,7 @@ foreach ($sheet in 'houses', 'trees', 'props', 'villagers') {
   "${sheet}: " + (([Cutter]::CutSheet($src, $out, 1500)) -join ', ')
 }
 # one shared 28-colour palette across every sprite, then the painted edge (5 px, up to 30 % darker)
-$dirs = @('houses', 'trees', 'props', 'villagers') | ForEach-Object { Join-Path $root "web\art\$_" } | Where-Object { Test-Path $_ }
+$dirs = @('houses', 'trees', 'props', 'villagers', 'animals') | ForEach-Object { Join-Path $root "web\art\$_" } | Where-Object { Test-Path $_ }
 $pal = [Cutter]::Palette([string[]]$dirs, 28, 5, 0.30)
 Set-Content -Path (Join-Path $root 'web\art\palette.json') -Value $pal -Encoding ascii
 "palette: $pal"

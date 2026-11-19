@@ -99,7 +99,7 @@
     for (const v of villagers.list) if (v.state !== 'inside') extra.push(v);
     extra.sort(byY);
     let i = 0;
-    const put = (e) => { if (e.kind === 'person' || e.kind === 'cat') HS.drawVillager(b, e); else b.sprite(e.sp, e.x, e.y, e.scale * (e.size || 1), CAST[e.kind] || 6, sway(e), phase(e)); };
+    const put = (e) => { if (e.kind === 'person' || e.kind === 'cat' || e.kind === 'dog') HS.drawVillager(b, e); else b.sprite(e.sp, e.x, e.y, e.scale * (e.size || 1), CAST[e.kind] || 6, sway(e), phase(e)); };
     for (const o of world.objects) {
       while (i < extra.length && extra[i].y <= o.y) put(extra[i++]);
       if (o.scale >= 0.02) b.sprite(o.sp, o.x, o.y, o.scale, CAST[o.kind] || 6, sway(o), phase(o));

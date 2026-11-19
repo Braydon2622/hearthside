@@ -8,9 +8,8 @@ will disclose this. No studio, film or artist is named in any prompt.
 
 `art/source/ground.png`, `houses.png`, `trees.png`, `props.png`, `villagers.png` and `art/style-options/*`
 were generated before this log was started; the tool, model and prompts were not recorded at the time.
-Still in use: `ground.png` (grass, cobble, dirt and lawn tiles) and `villagers.png` (villagers and cats; the
-v2 villager sheet could not be generated, see below). The first-generation houses, trees and props sheets
-are kept for history but no longer cut.
+Still in use: `ground.png` (grass, cobble, dirt and lawn tiles). The first-generation houses, trees, props and
+villagers sheets are kept for history but no longer cut (the v2 sheets replace them).
 
 ## Rebuild v2 (high eagle-eye camera, about 78 degrees)
 
@@ -25,10 +24,23 @@ it bills Figma AI credits.
 | `art/source/v2/trees.png` | 3:4 | Feature trees | Sprite sheet of 8 separate feature trees in a 2x4 grid with wide clear gaps, each complete and uncropped, on flat pure magenta #FF00FF. Seen from high above at about 78 degrees, so each tree is a round leafy crown seen from the top, built from soft clustered leaf masses, with only a short stub of trunk peeking out at the bottom edge. Hand-painted gouache with loose visible brush strokes, softly rounded simplified shapes, warm saturated colours. Light comes from the upper left: sunlit yellow-green leaf clusters on the upper left, deep cool blue-green shading on the lower right. No cast shadow on the background, no ground, no outlines, no text. A big oak, a round maple, a pink blossom tree, a pale birch, a dark fir seen from above, a golden autumn tree, an apple tree with red fruit, and a willow. |
 | `art/source/v2/props.png` | 3:5 | Props | Sprite sheet of 10 separate small village props in a 2x5 grid with wide clear gaps, each complete and uncropped, on flat pure magenta #FF00FF. Seen from high above at about 78 degrees, so you mostly see the tops of things with only a thin sliver of their front sides. Hand-painted gouache with loose visible brush strokes, softly rounded simplified shapes, warm saturated colours. Light comes from the upper left, with soft cool shading on the lower-right sides. No cast shadow on the background, no ground, no outlines, no text. A market stall with a striped awning and baskets of vegetables, a round stone well with a little wooden roof, a round stone fountain with water, a wooden bench, a stack of barrels and crates, a round hay bale, a small vegetable garden bed with green rows, a wooden flower barrel full of blooms, a wheelbarrow with pumpkins, and a short iron lamp post with a lantern. |
 
-### Not generated
+### Villagers and animals (2026-11-19)
 
-The villager sheet (prompt below) was refused with "Insufficient Figma AI credits"; the limit resets
-2026-11-20 00:00 UTC. Per the brief, generation stopped there, so the two-animal sheet was not attempted either.
+The villager sheet was first refused on 2026-11-18 with "Insufficient Figma AI credits". It was generated the
+next day from a second Figma account the owner set up, into Figma file `1GKRfA0uwwS96RZwjmfcIK`, same tool and
+model (`gemini-3.1-flash-image`, 1376x768).
+
+| File | Figma node | Use | Prompt |
+| --- | --- | --- | --- |
+| `art/source/v2/villagers.png` | 2:2 | Villagers | The villager prompt quoted below, unchanged. |
+| `art/source/v2/animals.png` | 2:3 | Cats (top row) and dogs (bottom row) | Sprite sheet of 8 separate small animals in a 2x4 grid with wide clear gaps, each complete and uncropped, full body, on flat pure magenta #FF00FF. Top row: four village cats (ginger tabby, black cat with white paws, grey cat, calico cat). Bottom row: four small village dogs (brown and white terrier, black and tan dog, golden fluffy dog, white spotted dog). Seen from high above at about 78 degrees, so you mostly see their backs and heads from above with the body slightly foreshortened, standing side-on so they could walk left or right. Simple chunky readable shapes for an animal about 14 to 18 pixels long. Hand-painted gouache with loose visible brush strokes, warm saturated colours. Light comes from the upper left, with soft cool shading on the lower right. No cast shadow on the background, no ground, no outlines, no text. |
+
+The villagers came out closer to a three-quarter view than 78 degrees (heads and hats large, bodies a little
+foreshortened, faceless); at about 30 px that reads better than a true top-down figure would, so it was kept.
+The animals have light dark outlines that disappear at 15-18 px. Re-running the cutter rebuilt the shared
+palette with these included, so every sprite was re-snapped.
+
+Villager prompt:
 
 > Sprite sheet of 10 separate small villagers in a 2x5 grid with wide clear gaps, each complete and uncropped,
 > standing, full figure, on flat pure magenta #FF00FF. Seen from high above at about 78 degrees, so you see the
