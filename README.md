@@ -5,7 +5,7 @@ icons. The village rearranges itself around wherever your icons are. Icons get o
 houses and trees step aside, paths link groups of icons, and villagers, a cat and a dog stroll the lanes.
 Drag an icon somewhere new and the ground ripples out from where you dropped it.
 
-**[Try the browser demo](https://OWNER.github.io/hearthside/)**: drag the stand-in icons around, use
+**[Try the browser demo](https://braydon2622.github.io/hearthside/)**: drag the stand-in icons around, use
 "Fill desktop", and move the time slider through sunset and night.
 
 ![Noon](docs/milestones/06-life-noon-1920.png)
