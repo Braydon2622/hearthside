@@ -114,7 +114,7 @@ overlap); sunset is warm with lifted purple shadows; night is deep blue with war
 
 - **Generated** (Figma MCP `generate_image`, `gemini-3.1-flash-image`, all prompts in `art/SOURCES.md`): two
   house test sheets, then trees and props. Test 1 (the brief's example prompt) was compared at on-screen size
-  against `art/style-options/H-ghibli-inspired-overhead.png`: right camera (roof fills the shape, thin wall
+  against `art/style-options/H-painted-overhead.png`: right camera (roof fills the shape, thin wall
   strip), about 150 px wide on screen, a little flatter and crisper than the reference. Test 2 asked for looser
   gouache and came out more painterly, but the camera drifted lower (big gables in perspective) and some dark
   outlines appeared, so test 1 became the houses sheet. Trees match the camera well. Props came out closer to

@@ -4,5 +4,6 @@ src-tauri/gen/
 .claude/
 *.log
 
-# Frames from someone else's video, used only for private study. Never publish.
-research/deskland-frames/
+# private notes and working briefs
+research/
+prompts/
