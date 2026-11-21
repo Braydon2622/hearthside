@@ -1,0 +1,36 @@
+# Builds the Windows installer on GitHub's own machines and attaches it to a release
+# whenever a version tag (v0.1.0, v0.2.0, ...) is pushed.
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Hearthside ${{ github.ref_name }}
+          releaseBody: |
+            A live Windows wallpaper: a hand-painted village behind your desktop icons that rearranges itself around them.
+
+            **Install:** download `Hearthside_*_x64-setup.exe` below and run it. It installs for your user only, with no admin prompt.
+            The installer is not code-signed yet, so SmartScreen may say "Windows protected your PC": choose **More info**, then **Run anyway**.
+
+            Windows 10/11, main monitor. Quit from the tray icon; uninstall from Settings > Apps.
+          releaseDraft: false
+          prerelease: false
