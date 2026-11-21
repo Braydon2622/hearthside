@@ -40,7 +40,18 @@ the empty slots:
   reads icon positions through `IFolderView`, and pauses the page whenever a maximised window covers the
   desktop. It uses about 5 to 9 % of one CPU core while animating and well under 1 % while covered.
 
-## Running it
+## Install (Windows 10/11)
+
+1. Download `Hearthside_0.1.0_x64-setup.exe` from the
+   [latest release](https://github.com/Braydon2622/hearthside/releases/latest) (about 5 MB).
+2. Run it. It installs for your user only, with no admin prompt, and starts from the Start menu.
+3. The installer is not code-signed yet, so Windows SmartScreen may say "Windows protected your PC".
+   Choose **More info**, then **Run anyway**.
+
+Hearthside sits behind your desktop icons on your main monitor. To quit, right-click its icon in the
+system tray. To remove it, use Settings > Apps.
+
+## Running it from source
 
 Browser prototype (no install needed beyond PowerShell):
 
